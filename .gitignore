@@ -14,3 +14,6 @@ coverage*
 .idea/
 .vscode/
 *~
+
+# Demo fixtures from local runs
+/big.bin
