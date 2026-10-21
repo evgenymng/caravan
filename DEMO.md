@@ -86,7 +86,7 @@ B при старте пишет `stored transfer … status=interrupted receive
 
 ```bash
 # B: вместо получателя — сокет, который принимает соединение и молчит
-python3 -c 'import socket,time; s=socket.socket(); s.bind(("",8080)); s.listen(); s.accept(); time.sleep(600)'
+python3 -c 'import socket,time; s=socket.socket(); s.bind(("",8080)); s.listen(); c,_=s.accept(); time.sleep(600)'
 # A:
 ./bin/caravan send --file big.bin --addr 192.168.1.15:8080 --ack-timeout 5s --max-retries 2
 ```
