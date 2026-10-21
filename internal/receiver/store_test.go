@@ -70,7 +70,10 @@ func TestStore_FullTransfer(t *testing.T) {
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(data, got))
-	require.NoDirExists(t, filepath.Join(dir, ".caravan", meta.TransferID))
+	state := filepath.Join(dir, ".caravan", meta.TransferID)
+	require.NoFileExists(t, filepath.Join(state, "f.bin.part"))
+	require.NoFileExists(t, filepath.Join(state, "received.bitmap"))
+	require.FileExists(t, filepath.Join(state, "metadata.json"))
 	tr.Release(transfer.StatusInterrupted) // no-op after finalize
 }
 
@@ -101,8 +104,18 @@ func TestStore_FinalizeMismatchResets(t *testing.T) {
 	require.NoError(t, err)
 	_, err = tr.Finalize()
 	require.ErrorIs(t, err, ErrChecksumMismatch)
-	require.NoDirExists(t, filepath.Join(dir, ".caravan", meta.TransferID))
+	state := filepath.Join(dir, ".caravan", meta.TransferID)
+	require.NoFileExists(t, filepath.Join(state, "f.bin.part"))
 	require.NoFileExists(t, filepath.Join(dir, "f.bin"))
+	list, err := s.Scan()
+	require.NoError(t, err)
+	require.Equal(t, transfer.StatusFailed, list[0].Status)
+
+	// Next attempt starts from scratch.
+	tr, err = s.Acquire(meta, func() {})
+	require.NoError(t, err)
+	require.Equal(t, transfer.StatusTransferring, tr.Status())
+	tr.Release(transfer.StatusInterrupted)
 }
 
 func TestStore_ResumeAfterRestart(t *testing.T) {
@@ -205,7 +218,7 @@ func TestStore_NameCollision(t *testing.T) {
 	require.Equal(t, filepath.Join(dir, "f (1).bin"), path)
 }
 
-func TestStore_ScanMarksInterrupted(t *testing.T) {
+func TestStore_ScanIsReadOnlyRecoverMarksInterrupted(t *testing.T) {
 	dir := t.TempDir()
 	s := newStore(t, dir)
 	_, meta := testFile(t, testChunk)
@@ -213,12 +226,57 @@ func TestStore_ScanMarksInterrupted(t *testing.T) {
 	require.NoError(t, err)
 	_ = tr // simulate kill -9: never released
 
-	list, err := newStore(t, dir).Scan()
+	other := newStore(t, dir) // e.g. `caravan status` while receiver runs
+	list, err := other.Scan()
+	require.NoError(t, err)
+	require.Equal(t, transfer.StatusTransferring, list[0].Status)
+
+	require.NoError(t, other.Recover()) // receiver restart
+	list, err = other.Scan()
 	require.NoError(t, err)
 	require.Equal(t, transfer.StatusInterrupted, list[0].Status)
 	raw, err := os.ReadFile(
-		filepath.Join(dir, ".caravan", meta.TransferID, "metadata.json"),
-	)
+		filepath.Join(dir, ".caravan", meta.TransferID, "metadata.json"))
 	require.NoError(t, err)
 	require.Contains(t, string(raw), `"interrupted"`)
+}
+
+func TestStore_CompletedIsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	s := newStore(t, dir)
+	data, meta := testFile(t, testChunk+3)
+	tr, err := s.Acquire(meta, func() {})
+	require.NoError(t, err)
+	for i := range meta.Chunks {
+		_, err = tr.WriteChunk(i, chunk(data, meta, i))
+		require.NoError(t, err)
+	}
+	path, err := tr.Finalize()
+	require.NoError(t, err)
+
+	// COMPLETE was lost: sender comes back with the same META.
+	again, err := s.Acquire(meta, func() {})
+	require.NoError(t, err)
+	require.Equal(t, transfer.StatusCompleted, again.Status())
+	require.Equal(t, [][2]uint64{{0, 1}}, again.Received())
+	dup, err := again.WriteChunk(0, chunk(data, meta, 0))
+	require.NoError(t, err)
+	require.True(t, dup)
+	path2, err := again.Finalize()
+	require.NoError(t, err)
+	require.Equal(t, path, path2)
+	require.NoFileExists(t, filepath.Join(dir, "f (1).bin"))
+
+	list, err := s.Scan()
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.Equal(t, transfer.StatusCompleted, list[0].Status)
+
+	// The user deleted the result: start over.
+	require.NoError(t, os.Remove(path))
+	fresh, err := s.Acquire(meta, func() {})
+	require.NoError(t, err)
+	require.Equal(t, transfer.StatusTransferring, fresh.Status())
+	require.Nil(t, fresh.Received())
+	fresh.Release(transfer.StatusInterrupted)
 }

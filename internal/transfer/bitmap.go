@@ -1,11 +1,15 @@
 package transfer
 
-import "fmt"
+import (
+	"fmt"
+	"math/bits"
+)
 
 // Bitmap tracks which chunks of a transfer have been received.
 type Bitmap struct {
-	n    uint64
-	bits []byte
+	n     uint64
+	bits  []byte
+	count uint64
 }
 
 // NewBitmap returns an empty bitmap for n chunks.
@@ -21,6 +25,9 @@ func LoadBitmap(n uint64, raw []byte) (*Bitmap, error) {
 	}
 	b := &Bitmap{n: n, bits: make([]byte, len(raw))}
 	copy(b.bits, raw)
+	for _, x := range b.bits {
+		b.count += uint64(bits.OnesCount8(x)) //nolint:gosec // 0..8
+	}
 	return b, nil
 }
 
@@ -31,21 +38,18 @@ func (b *Bitmap) Bytes() []byte { return b.bits }
 func (b *Bitmap) Len() uint64 { return b.n }
 
 // Set marks chunk i as received.
-func (b *Bitmap) Set(i uint64) { b.bits[i/8] |= 1 << (i % 8) }
+func (b *Bitmap) Set(i uint64) {
+	if !b.Has(i) {
+		b.bits[i/8] |= 1 << (i % 8)
+		b.count++
+	}
+}
 
 // Has reports whether chunk i is received.
 func (b *Bitmap) Has(i uint64) bool { return b.bits[i/8]&(1<<(i%8)) != 0 }
 
 // Count returns the number of received chunks.
-func (b *Bitmap) Count() uint64 {
-	var c uint64
-	for i := range b.n {
-		if b.Has(i) {
-			c++
-		}
-	}
-	return c
-}
+func (b *Bitmap) Count() uint64 { return b.count }
 
 // Full reports whether every chunk is received.
 func (b *Bitmap) Full() bool { return b.Count() == b.n }

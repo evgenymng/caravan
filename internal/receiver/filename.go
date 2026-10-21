@@ -23,7 +23,8 @@ func sanitizeName(name, fallback string) string {
 	if len(name) > 255 {
 		name = name[:255]
 	}
-	if name == "" {
+	// Base("/") is "/"; anything still holding a separator is not a name.
+	if name == "" || strings.ContainsAny(name, "/") || !filepath.IsLocal(name) {
 		return fallback
 	}
 	return name

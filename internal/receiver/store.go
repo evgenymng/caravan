@@ -50,11 +50,14 @@ type Transfer struct {
 	preempt  func()
 	done     chan struct{}
 	released bool
+	// finalPath is set once the file has been moved into place.
+	finalPath string
 }
 
 type metaOnDisk struct {
 	transfer.Meta
 	Status    transfer.Status `json:"status"`
+	FinalPath string          `json:"finalPath,omitempty"`
 	UpdatedAt time.Time       `json:"updatedAt"`
 }
 
@@ -71,8 +74,7 @@ func NewStore(dir string, fsync bool) (*Store, error) {
 	}, nil
 }
 
-// Scan lists stored transfers. A transfer left in "transferring" by a
-// crashed receiver is marked interrupted on disk.
+// Scan lists stored transfers without touching them.
 func (s *Store) Scan() ([]Summary, error) {
 	entries, err := os.ReadDir(filepath.Join(s.dir, stateDirName))
 	if err != nil {
@@ -88,20 +90,14 @@ func (s *Store) Scan() ([]Summary, error) {
 		if err != nil {
 			continue // not ours or damaged; leave it alone
 		}
-		if md.Status == transfer.StatusTransferring {
-			s.mu.Lock()
-			_, live := s.active[md.TransferID]
-			s.mu.Unlock()
-			if !live {
-				md.Status = transfer.StatusInterrupted
-				_ = s.writeMeta(dir, md)
-			}
-		}
-		var received uint64
+		received := md.Chunks // terminal states keep no bitmap
 		if raw, err := os.ReadFile(filepath.Join(dir, bitmapFile)); err == nil {
 			if b, err := transfer.LoadBitmap(md.Chunks, raw); err == nil {
 				received = b.Count()
 			}
+		}
+		if md.Status == transfer.StatusFailed {
+			received = 0
 		}
 		out = append(out, Summary{
 			Meta: md.Meta, Status: md.Status,
@@ -109,6 +105,30 @@ func (s *Store) Scan() ([]Summary, error) {
 		})
 	}
 	return out, nil
+}
+
+// Recover marks transfers a crashed receiver left in "transferring" as
+// interrupted. Only the receiver itself calls this, at startup.
+func (s *Store) Recover() error {
+	list, err := s.Scan()
+	if err != nil {
+		return err
+	}
+	for _, t := range list {
+		if t.Status != transfer.StatusTransferring {
+			continue
+		}
+		dir := filepath.Join(s.dir, stateDirName, t.TransferID)
+		md, err := readMeta(dir)
+		if err != nil {
+			continue
+		}
+		md.Status = transfer.StatusInterrupted
+		if err := s.writeMeta(dir, md); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Acquire opens the transfer described by meta for exclusive use. An
@@ -149,6 +169,17 @@ func (s *Store) open(meta transfer.Meta) (*Transfer, error) {
 	t := &Transfer{store: s, dir: dir, meta: meta, done: make(chan struct{})}
 
 	md, err := readMeta(dir)
+	if err == nil && md.Status == transfer.StatusCompleted {
+		if _, statErr := os.Stat(md.FinalPath); statErr == nil {
+			// The sender never saw COMPLETE: answer as completed again.
+			t.meta, t.status, t.finalPath = md.Meta, md.Status, md.FinalPath
+			t.bitmap = transfer.NewBitmap(t.meta.Chunks)
+			for i := range t.meta.Chunks {
+				t.bitmap.Set(i)
+			}
+			return t, nil
+		}
+	}
 	switch {
 	case err == nil && md.Status != transfer.StatusCompleted &&
 		md.Status != transfer.StatusFailed:
@@ -253,6 +284,10 @@ func (t *Transfer) WriteChunk(index uint64, data []byte) (bool, error) {
 // directory and removes the transfer state. On checksum mismatch the
 // transfer is dropped so the next attempt starts from scratch.
 func (t *Transfer) Finalize() (string, error) {
+	if t.status == transfer.StatusCompleted {
+		t.unregister()
+		return t.finalPath, nil
+	}
 	if !t.bitmap.Full() {
 		return "", fmt.Errorf(
 			"%w: missing %v",
@@ -279,6 +314,7 @@ func (t *Transfer) Finalize() (string, error) {
 	if err := os.Rename(t.partPath(), final); err != nil {
 		return "", fmt.Errorf("move finished file: %w", err)
 	}
+	t.finalPath = final
 	t.drop(transfer.StatusCompleted)
 	return final, nil
 }
@@ -289,16 +325,26 @@ func (t *Transfer) Release(status transfer.Status) {
 	if t.released {
 		return
 	}
+	if t.status == transfer.StatusCompleted {
+		t.unregister()
+		return
+	}
 	_ = t.setStatus(status)
 	_ = t.part.Close()
 	t.unregister()
 }
 
-// drop removes all on-disk state after a terminal status.
+// drop ends the transfer in a terminal status: the part file and bitmap
+// go away, metadata stays as a record (and lets a repeated FINALIZE
+// after a lost COMPLETE succeed without resending anything).
 func (t *Transfer) drop(status transfer.Status) {
 	t.status = status
 	_ = t.part.Close()
-	_ = os.RemoveAll(t.dir)
+	_ = os.Remove(t.partPath())
+	_ = os.Remove(filepath.Join(t.dir, bitmapFile))
+	_ = t.store.writeMeta(t.dir, metaOnDisk{
+		Meta: t.meta, Status: status, FinalPath: t.finalPath,
+	})
 	t.unregister()
 }
 

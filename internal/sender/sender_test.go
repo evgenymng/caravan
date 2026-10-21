@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"math/rand"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -175,4 +176,56 @@ func TestSender_ContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() { time.Sleep(50 * time.Millisecond); cancel() }()
 	require.ErrorIs(t, New(o, discard).Run(ctx), context.Canceled)
+}
+
+// fakeReceiver answers the handshake with an arbitrary RESUME_STATE.
+func fakeReceiver(t *testing.T, rs protocol.ResumeState) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer func() { _ = conn.Close() }()
+				var hello protocol.Hello
+				_ = protocol.Expect(conn, protocol.TypeHello, 1<<16, &hello)
+				_ = protocol.WriteJSON(conn, protocol.TypeHelloOK, hello)
+				var meta protocol.Meta
+				_ = protocol.Expect(conn, protocol.TypeMeta, 1<<16, &meta)
+				rs.TransferID = meta.TransferID
+				_ = protocol.WriteJSON(conn, protocol.TypeResumeState, rs)
+				_, _, _ = protocol.ReadFrame(conn, 1<<20)
+			}()
+		}
+	}()
+	return ln.Addr().String()
+}
+
+func TestSender_RejectsBogusResumeState(t *testing.T) {
+	path, _ := tempFile(t, 2*chunkSize)
+	cases := map[string]protocol.ResumeState{
+		"range past end": {
+			ChunkSize: chunkSize, Chunks: 2,
+			Received: [][2]uint64{{0, 5}},
+		},
+		"inverted range": {
+			ChunkSize: chunkSize, Chunks: 2,
+			Received: [][2]uint64{{1, 0}},
+		},
+		"chunk count mismatch": {ChunkSize: chunkSize, Chunks: 7},
+		"tiny chunk size":      {ChunkSize: 1, Chunks: 2 * chunkSize},
+	}
+	for name, rs := range cases {
+		t.Run(name, func(t *testing.T) {
+			o := opts(path, fakeReceiver(t, rs))
+			o.MaxRetries = 1
+			err := New(o, discard).Run(context.Background())
+			require.ErrorIs(t, err, ErrBadResumeState)
+		})
+	}
 }

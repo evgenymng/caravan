@@ -20,6 +20,9 @@ const (
 	shutdownTimeout = 10 * time.Second
 	// frameSlack covers the chunk header on top of the chunk data.
 	frameSlack = 64
+	// controlPayload bounds JSON frames; they are read before any
+	// per-transfer limit applies, so this caps memory per connection.
+	controlPayload = 64 << 10
 )
 
 // Config holds receiver settings.
@@ -81,6 +84,9 @@ func (s *Server) Store() *Store { return s.store }
 // Serve accepts connections until ctx is cancelled, then closes the
 // listener, aborts active sessions and waits for them to persist state.
 func (s *Server) Serve(ctx context.Context) error {
+	if err := s.store.Recover(); err != nil {
+		s.log.Warn("recover stored transfers", "error", err)
+	}
 	if list, err := s.store.Scan(); err == nil {
 		for _, t := range list {
 			s.log.Info("stored transfer", "transfer_id", t.TransferID,
@@ -249,7 +255,7 @@ func (c *session) handleChunk(tr *Transfer, payload []byte) error {
 
 func (c *session) expect(t protocol.Type, v any) error {
 	_ = c.conn.SetReadDeadline(time.Now().Add(c.cfg.ReadTimeout))
-	return protocol.Expect(c.conn, t, c.cfg.MaxChunkSize+frameSlack, v)
+	return protocol.Expect(c.conn, t, controlPayload, v)
 }
 
 func (c *session) write(t protocol.Type, v any) error {

@@ -44,6 +44,7 @@ type proxy struct {
 	mu           sync.Mutex
 	chunks       int
 	killAfter    int // 0 = never
+	killEvery    int // 0 = never; kill after every n-th chunk
 	corruptChunk int // 0 = never
 	killed       chan struct{}
 }
@@ -155,13 +156,20 @@ func (p *proxy) handle(client net.Conn) {
 				kill = true
 				p.killAfter = 0
 			}
+			if p.killEvery > 0 && p.chunks%p.killEvery == 0 {
+				kill = true
+			}
 			p.mu.Unlock()
 		}
 		if _, err := server.Write(append(hdr[:], payload...)); err != nil {
 			return
 		}
 		if kill {
-			close(p.killed)
+			select {
+			case <-p.killed:
+			default:
+				close(p.killed)
+			}
 			return
 		}
 	}

@@ -33,7 +33,7 @@ A:
 - строку прогресса (байты, проценты, chunks, скорость, ETA);
 - итог A: `completed: transfer …, sha256 …`, `chunks sent 100, acked 100, skipped on resume 0`;
 - `shasum -a 256 downloads/big.bin` на B совпадает с A;
-- `ls downloads/.caravan` пуст — состояние удалено после успеха.
+- `./bin/caravan status --dir ./downloads` показывает `status: completed`; `.part` и bitmap удалены.
 
 ## 2. Разрыв и продолжение (главный сценарий)
 

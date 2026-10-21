@@ -161,3 +161,19 @@ func TestReceiverRestartResumesFromDisk(t *testing.T) {
 	require.LessOrEqual(t, st.Sent, uint64(61))
 	require.Equal(t, sum, fileSum(t, filepath.Join(dir, "f.bin")))
 }
+
+func TestFlakyLinkDoesNotExhaustRetries(t *testing.T) {
+	dir := t.TempDir()
+	rcv := startReceiver(t, receiver.Config{Dir: dir})
+	px := startProxy(t, rcv.Addr().String())
+	px.killEvery = 3 // every connection dies after three chunks
+	path, sum := tempFile(t, "f.bin", 12*chunk64K)
+
+	o := senderOpts(path, px.Addr(), chunk64K)
+	o.MaxRetries = 1 // one retry per outage is enough when each one made progress
+	s := sender.New(o, discard)
+	require.NoError(t, s.Run(context.Background()))
+	require.GreaterOrEqual(t, s.Stats().Reconnects, 3)
+	require.Equal(t, uint64(0), s.Stats().Resent)
+	require.Equal(t, sum, fileSum(t, filepath.Join(dir, "f.bin")))
+}

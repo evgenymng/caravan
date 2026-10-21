@@ -26,8 +26,9 @@ const (
 )
 
 var (
-	ErrSourceChanged = errors.New("source file changed since transfer started")
-	errDropped       = errors.New("connection dropped on purpose")
+	ErrSourceChanged  = errors.New("source file changed since transfer started")
+	ErrBadResumeState = errors.New("receiver sent an invalid resume state")
+	errDropped        = errors.New("connection dropped on purpose")
 )
 
 // Options configures a Sender.
@@ -115,15 +116,22 @@ func (s *Sender) Run(ctx context.Context) error {
 				return err
 			}
 		}
+		ackedBefore := s.acked.Load()
 		err := s.attempt(ctx)
 		if err == nil {
 			return nil
+		}
+		if s.acked.Load() > ackedBefore {
+			// The link works, just flaky: a session that made progress
+			// earns a fresh retry budget and a short delay again.
+			attempt, delay = 0, s.opts.RetryDelay
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		var perr *protocol.Error
-		if errors.As(err, &perr) && perr.Fatal() {
+		if (errors.As(err, &perr) && perr.Fatal()) ||
+			errors.Is(err, ErrBadResumeState) {
 			return err
 		}
 		s.log.Warn("transfer interrupted", "error", err)
@@ -207,6 +215,9 @@ func (s *Sender) session(conn net.Conn) error {
 	if err != nil {
 		return err
 	}
+	if err := s.adoptResumeState(&rs); err != nil {
+		return err
+	}
 	if rs.ChunkSize != s.meta.ChunkSize {
 		s.log.Warn(
 			"receiver already has this transfer with another chunk size, adopting it",
@@ -261,6 +272,23 @@ func (s *Sender) session(conn net.Conn) error {
 	}
 	s.log.Info("transfer completed", "transfer_id", s.meta.TransferID,
 		"sha256", done.Checksum)
+	return nil
+}
+
+// adoptResumeState validates what the receiver claims before it drives
+// which chunks we skip.
+func (s *Sender) adoptResumeState(rs *protocol.ResumeState) error {
+	size := uint64(s.size) //nolint:gosec // size ≥ 0
+	if rs.ChunkSize < transfer.MinChunkSize ||
+		rs.Chunks != (size+uint64(rs.ChunkSize)-1)/uint64(rs.ChunkSize) {
+		return fmt.Errorf("%w: chunk size %d, %d chunks",
+			ErrBadResumeState, rs.ChunkSize, rs.Chunks)
+	}
+	for _, r := range rs.Received {
+		if r[0] > r[1] || r[1] >= rs.Chunks {
+			return fmt.Errorf("%w: range %v", ErrBadResumeState, r)
+		}
+	}
 	return nil
 }
 

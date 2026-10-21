@@ -230,3 +230,15 @@ func TestServer_ShutdownMarksInterrupted(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, transfer.StatusInterrupted, md.Status)
 }
+
+func TestServer_RejectsHugeControlFrame(t *testing.T) {
+	srv, _, _ := startServer(t, Config{MaxChunkSize: 64 << 20})
+	conn := dial(t, srv)
+	// A HELLO claiming a 1 MiB payload must be dropped before allocation.
+	hdr := []byte{0, 16, 0, 1, byte(protocol.TypeHello)}
+	_, err := conn.Write(hdr)
+	require.NoError(t, err)
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(2*time.Second)))
+	_, _, err = protocol.ReadFrame(conn, maxPayload)
+	require.ErrorIs(t, err, io.EOF)
+}
