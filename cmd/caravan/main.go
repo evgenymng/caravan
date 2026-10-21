@@ -20,7 +20,8 @@ func main() {
 
 func run() error {
 	ctx, stop := signal.NotifyContext(
-		context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		context.Background(), syscall.SIGINT, syscall.SIGTERM,
+	)
 	defer stop()
 
 	err := cli.Execute(ctx)

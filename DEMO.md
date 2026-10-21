@@ -7,7 +7,7 @@
 
 ```bash
 make build
-head -c 100M /dev/urandom > big.bin          # файл на 100 chunks по 1 MB
+dd if=/dev/urandom of=big.bin bs=1048576 count=100   # 100 chunks по 1 MB; на macOS и Linux
 shasum -a 256 big.bin
 ```
 
