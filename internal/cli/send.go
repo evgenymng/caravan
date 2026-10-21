@@ -37,7 +37,7 @@ func newSendCmd() *cobra.Command {
 						isTTY(os.Stdout),
 					)
 				}
-				bar.Update(st.BytesAcked, st.Acked+st.Skipped, st.Meta.Chunks)
+				bar.Update(st.BytesAcked, st.Done, st.Meta.Chunks)
 			}
 
 			s := sender.New(opts, slog.Default())

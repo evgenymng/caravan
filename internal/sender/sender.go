@@ -54,6 +54,7 @@ type Stats struct {
 	Sent       uint64 // CHUNK frames written
 	Acked      uint64 // ACKs received
 	Skipped    uint64 // chunks the receiver already had on (re)connect
+	Done       uint64 // chunks the receiver has now: Skipped + acked this session
 	Resent     uint64 // sends of a chunk this sender already saw ACKed
 	BytesAcked uint64
 	Reconnects int
@@ -71,8 +72,8 @@ type Sender struct {
 	dropped bool
 	ackedBy *transfer.Bitmap // chunk indexes ACKed in this run
 
-	sent, acked, skipped, resent, bytesAcked atomic.Uint64
-	reconnects                               atomic.Int64
+	sent, acked, skipped, done, resent, bytesAcked atomic.Uint64
+	reconnects                                     atomic.Int64
 }
 
 // New returns a Sender; nothing is opened until Run.
@@ -87,6 +88,7 @@ func (s *Sender) Stats() Stats {
 		Sent:       s.sent.Load(),
 		Acked:      s.acked.Load(),
 		Skipped:    s.skipped.Load(),
+		Done:       s.done.Load(),
 		Resent:     s.resent.Load(),
 		BytesAcked: s.bytesAcked.Load(),
 		Reconnects: int(s.reconnects.Load()),
@@ -238,6 +240,7 @@ func (s *Sender) session(conn net.Conn) error {
 		s.ackedBy = transfer.NewBitmap(s.meta.Chunks)
 	}
 	s.skipped.Store(have.Count())
+	s.done.Store(have.Count())
 	s.bytesAcked.Store(0)
 	for _, r := range rs.Received {
 		for i := r[0]; i <= r[1]; i++ {
@@ -341,6 +344,7 @@ func (s *Sender) sendChunk(conn net.Conn, i uint64, buf []byte) error {
 			return fmt.Errorf("ack for chunk %d, want %d", ack.Index, i)
 		}
 		s.acked.Add(1)
+		s.done.Add(1)
 		s.ackedBy.Set(i)
 		s.bytesAcked.Add(uint64(len(data)))
 		s.log.Debug("chunk acked", "chunk", i)
