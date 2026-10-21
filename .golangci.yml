@@ -1,0 +1,35 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - gosec
+    - misspell
+    - unconvert
+    - decorder
+  settings:
+    gosec:
+      excludes:
+        - G117
+    decorder:
+      dec-order:
+        - const
+        - var
+        - type
+        - func
+      disable-dec-order-check: false
+      disable-dec-num-check: true
+      disable-init-func-first-check: true
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+    - golines
+  settings:
+    golines:
+      max-len: 80
+      tab-len: 4

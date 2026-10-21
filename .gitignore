@@ -1,0 +1,16 @@
+# Binaries / build
+/bin/
+*.exe
+
+# Receiver downloads from local runs
+/downloads/
+
+# Test / coverage
+*.out
+coverage*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*~
