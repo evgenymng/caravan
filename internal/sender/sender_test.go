@@ -102,6 +102,7 @@ func TestSender_ResumeAfterLostAck(t *testing.T) {
 	require.Equal(t, uint64(4), st.Sent, "chunks 0,1 then 2,3 — no resend")
 	require.Equal(t, uint64(3), st.Acked, "ack for chunk 1 was never read")
 	require.Equal(t, uint64(2), st.Skipped, "receiver reported 0 and 1")
+	require.Equal(t, uint64(0), st.Resent, "no acked chunk sent again")
 	require.Equal(t, 1, st.Reconnects)
 }
 

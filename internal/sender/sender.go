@@ -53,6 +53,7 @@ type Stats struct {
 	Sent       uint64 // CHUNK frames written
 	Acked      uint64 // ACKs received
 	Skipped    uint64 // chunks the receiver already had on (re)connect
+	Resent     uint64 // sends of a chunk this sender already saw ACKed
 	BytesAcked uint64
 	Reconnects int
 }
@@ -67,9 +68,10 @@ type Sender struct {
 	modTime time.Time
 	meta    transfer.Meta
 	dropped bool
+	ackedBy *transfer.Bitmap // chunk indexes ACKed in this run
 
-	sent, acked, skipped, bytesAcked atomic.Uint64
-	reconnects                       atomic.Int64
+	sent, acked, skipped, resent, bytesAcked atomic.Uint64
+	reconnects                               atomic.Int64
 }
 
 // New returns a Sender; nothing is opened until Run.
@@ -84,6 +86,7 @@ func (s *Sender) Stats() Stats {
 		Sent:       s.sent.Load(),
 		Acked:      s.acked.Load(),
 		Skipped:    s.skipped.Load(),
+		Resent:     s.resent.Load(),
 		BytesAcked: s.bytesAcked.Load(),
 		Reconnects: int(s.reconnects.Load()),
 	}
@@ -220,6 +223,9 @@ func (s *Sender) session(conn net.Conn) error {
 			have.Set(i)
 		}
 	}
+	if s.ackedBy == nil || s.ackedBy.Len() != s.meta.Chunks {
+		s.ackedBy = transfer.NewBitmap(s.meta.Chunks)
+	}
 	s.skipped.Store(have.Count())
 	s.bytesAcked.Store(0)
 	for _, r := range rs.Received {
@@ -270,6 +276,14 @@ func (s *Sender) sendChunk(conn net.Conn, i uint64, buf []byte) error {
 			return err
 		}
 		s.sent.Add(1)
+		if s.ackedBy.Has(i) {
+			s.resent.Add(1)
+			s.log.Error(
+				"protocol bug: resending an acknowledged chunk",
+				"chunk",
+				i,
+			)
+		}
 		s.log.Debug("chunk sent", "chunk", i, "bytes", len(data))
 		if s.shouldDrop(i) {
 			s.dropped = true
@@ -299,6 +313,7 @@ func (s *Sender) sendChunk(conn net.Conn, i uint64, buf []byte) error {
 			return fmt.Errorf("ack for chunk %d, want %d", ack.Index, i)
 		}
 		s.acked.Add(1)
+		s.ackedBy.Set(i)
 		s.bytesAcked.Add(uint64(len(data)))
 		s.log.Debug("chunk acked", "chunk", i)
 		if s.opts.OnProgress != nil {

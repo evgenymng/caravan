@@ -52,9 +52,10 @@ func newSendCmd() *cobra.Command {
 			bar.Finish(st.Meta.FileSize, st.Meta.Chunks)
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 				"completed: transfer %s, sha256 %s\n"+
-					"chunks sent %d, acked %d, skipped on resume %d, reconnects %d\n",
+					"chunks sent %d, acked %d, skipped on resume %d, "+
+					"acked-and-resent %d, reconnects %d\n",
 				st.Meta.TransferID, st.Meta.Checksum,
-				st.Sent, st.Acked, st.Skipped, st.Reconnects)
+				st.Sent, st.Acked, st.Skipped, st.Resent, st.Reconnects)
 			return nil
 		},
 	}
