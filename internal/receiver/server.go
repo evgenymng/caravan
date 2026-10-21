@@ -109,11 +109,7 @@ func (s *Server) Serve(ctx context.Context) error {
 			}
 			break
 		}
-		s.wg.Add(1)
-		go func() {
-			defer s.wg.Done()
-			s.handle(sessions, conn)
-		}()
+		s.wg.Go(func() { s.handle(sessions, conn) })
 	}
 
 	s.log.Info("shutting down")
