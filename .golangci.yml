@@ -14,6 +14,7 @@ linters:
     gosec:
       excludes:
         - G117
+        - G304 # opening user-supplied paths is this tool's job
     decorder:
       dec-order:
         - const
@@ -23,6 +24,11 @@ linters:
       disable-dec-order-check: false
       disable-dec-num-check: true
       disable-init-func-first-check: true
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
 
 formatters:
   enable:
