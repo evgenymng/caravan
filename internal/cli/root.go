@@ -3,9 +3,9 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -41,9 +41,9 @@ func NewRootCmd() *cobra.Command {
 	return root
 }
 
-// Execute runs the root command and returns its error.
-func Execute() error {
-	return NewRootCmd().Execute()
+// Execute runs the root command with ctx and returns its error.
+func Execute(ctx context.Context) error {
+	return NewRootCmd().ExecuteContext(ctx)
 }
 
 func parseLevel(s string) (slog.Level, error) {
@@ -59,9 +59,4 @@ func parseLevel(s string) (slog.Level, error) {
 	default:
 		return 0, fmt.Errorf("unknown log level %q", s)
 	}
-}
-
-func notImplemented(cmd *cobra.Command, _ []string) error {
-	fmt.Fprintf(os.Stderr, "%s: not implemented yet\n", cmd.Name())
-	return nil
 }

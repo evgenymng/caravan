@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/evgenymng/caravan/internal/cli"
 )
@@ -15,5 +19,14 @@ func main() {
 }
 
 func run() error {
-	return cli.Execute()
+	ctx, stop := signal.NotifyContext(
+		context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	err := cli.Execute(ctx)
+	if errors.Is(err, context.Canceled) {
+		fmt.Fprintln(os.Stderr, "interrupted")
+		return nil
+	}
+	return err
 }
