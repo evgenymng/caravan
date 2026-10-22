@@ -87,13 +87,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	if err := s.store.Recover(); err != nil {
 		s.log.Warn("recover stored transfers", "error", err)
 	}
-	if list, err := s.store.Scan(); err == nil {
-		for _, t := range list {
-			s.log.Info("stored transfer", "transfer_id", t.TransferID,
-				"file", t.FileName, "status", t.Status,
-				"received", t.ReceivedChunks, "chunks", t.Chunks)
-		}
-	}
+	s.logStored()
 	s.log.Info("listening", "addr", s.ln.Addr().String())
 
 	sessions, cancelSessions := context.WithCancel(context.Background())
@@ -114,6 +108,24 @@ func (s *Server) Serve(ctx context.Context) error {
 
 	s.log.Info("shutting down")
 	cancelSessions()
+	s.waitSessions()
+	return nil
+}
+
+func (s *Server) logStored() {
+	list, err := s.store.Scan()
+	if err != nil {
+		return
+	}
+	for _, t := range list {
+		s.log.Info("stored transfer", "transfer_id", t.TransferID,
+			"file", t.FileName, "status", t.Status,
+			"received", t.ReceivedChunks, "chunks", t.Chunks)
+	}
+}
+
+// waitSessions gives active sessions shutdownTimeout to persist state.
+func (s *Server) waitSessions() {
 	done := make(chan struct{})
 	go func() { s.wg.Wait(); close(done) }()
 	select {
@@ -121,7 +133,6 @@ func (s *Server) Serve(ctx context.Context) error {
 	case <-time.After(shutdownTimeout):
 		s.log.Warn("shutdown timeout, sessions abandoned")
 	}
-	return nil
 }
 
 func (s *Server) handle(ctx context.Context, conn net.Conn) {
@@ -200,26 +211,31 @@ func (c *session) loop(tr *Transfer) error {
 				return err
 			}
 		case protocol.TypeFinalize:
-			path, err := tr.Finalize()
-			switch {
-			case errors.Is(err, ErrIncomplete):
-				err = c.fail(protocol.CodeIncomplete, err.Error(), nil)
-				if err != nil {
-					return err
-				}
-				continue
-			case err != nil:
-				return c.fail(codeFor(err), err.Error(), nil)
+			done, err := c.handleFinalize(tr)
+			if err != nil || done {
+				return err
 			}
-			c.log.Info("transfer completed", "path", path,
-				"checksum", tr.Meta().Checksum)
-			return c.write(protocol.TypeComplete, protocol.Complete{
-				TransferID: tr.Meta().TransferID, Checksum: tr.Meta().Checksum,
-			})
 		default:
 			return fmt.Errorf("%w: %d", protocol.ErrUnexpectedType, typ)
 		}
 	}
+}
+
+// handleFinalize verifies and completes the transfer. An incomplete
+// bitmap is reported and the session continues (done == false).
+func (c *session) handleFinalize(tr *Transfer) (bool, error) {
+	path, err := tr.Finalize()
+	if errors.Is(err, ErrIncomplete) {
+		return false, c.fail(protocol.CodeIncomplete, err.Error(), nil)
+	}
+	if err != nil {
+		return true, c.fail(codeFor(err), err.Error(), nil)
+	}
+	c.log.Info("transfer completed", "path", path,
+		"checksum", tr.Meta().Checksum)
+	return true, c.write(protocol.TypeComplete, protocol.Complete{
+		TransferID: tr.Meta().TransferID, Checksum: tr.Meta().Checksum,
+	})
 }
 
 func (c *session) handleChunk(tr *Transfer, payload []byte) error {
