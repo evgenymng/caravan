@@ -10,7 +10,11 @@ linters:
     - misspell
     - unconvert
     - decorder
+    - funcorder
+    - nestif
   settings:
+    nestif:
+      min-complexity: 4
     gosec:
       excludes:
         - G117
