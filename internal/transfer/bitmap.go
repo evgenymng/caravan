@@ -66,11 +66,12 @@ func (b *Bitmap) ranges(want bool) [][2]uint64 {
 		if b.Has(i) != want {
 			continue
 		}
-		if len(out) > 0 && out[len(out)-1][1] == i-1 {
-			out[len(out)-1][1] = i
-		} else {
-			out = append(out, [2]uint64{i, i})
+		last := len(out) - 1
+		if last >= 0 && out[last][1] == i-1 {
+			out[last][1] = i
+			continue
 		}
+		out = append(out, [2]uint64{i, i})
 	}
 	return out
 }
