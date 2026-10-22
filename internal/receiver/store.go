@@ -90,18 +90,9 @@ func (s *Store) Scan() ([]Summary, error) {
 		if err != nil {
 			continue // not ours or damaged; leave it alone
 		}
-		received := md.Chunks // terminal states keep no bitmap
-		if raw, err := os.ReadFile(filepath.Join(dir, bitmapFile)); err == nil {
-			if b, err := transfer.LoadBitmap(md.Chunks, raw); err == nil {
-				received = b.Count()
-			}
-		}
-		if md.Status == transfer.StatusFailed {
-			received = 0
-		}
 		out = append(out, Summary{
 			Meta: md.Meta, Status: md.Status,
-			ReceivedChunks: received, UpdatedAt: md.UpdatedAt,
+			ReceivedChunks: receivedChunks(dir, md), UpdatedAt: md.UpdatedAt,
 		})
 	}
 	return out, nil
@@ -169,67 +160,39 @@ func (s *Store) open(meta transfer.Meta) (*Transfer, error) {
 	t := &Transfer{store: s, dir: dir, meta: meta, done: make(chan struct{})}
 
 	md, err := readMeta(dir)
-	if err == nil && md.Status == transfer.StatusCompleted {
-		if _, statErr := os.Stat(md.FinalPath); statErr == nil {
-			// The sender never saw COMPLETE: answer as completed again.
-			t.meta, t.status, t.finalPath = md.Meta, md.Status, md.FinalPath
-			t.bitmap = transfer.NewBitmap(t.meta.Chunks)
-			for i := range t.meta.Chunks {
-				t.bitmap.Set(i)
-			}
-			return t, nil
-		}
-	}
-	switch {
-	case err == nil && md.Status != transfer.StatusCompleted &&
-		md.Status != transfer.StatusFailed:
-		if md.FileSize != meta.FileSize || md.Checksum != meta.Checksum {
-			return nil, fmt.Errorf("%w: stored size %d/%s, got %d/%s",
-				ErrMetaMismatch, md.FileSize, md.Checksum[:8],
-				meta.FileSize, meta.Checksum[:8])
-		}
-		t.meta = md.Meta
-		raw, err := os.ReadFile(filepath.Join(dir, bitmapFile))
-		if err != nil {
-			return nil, fmt.Errorf("read bitmap: %w", err)
-		}
-		if t.bitmap, err = transfer.LoadBitmap(t.meta.Chunks, raw); err != nil {
-			return nil, err
-		}
-		t.part, err = os.OpenFile(t.partPath(), os.O_RDWR, 0o600)
-		if err != nil {
-			return nil, fmt.Errorf("open part file: %w", err)
-		}
-	case err == nil || errors.Is(err, os.ErrNotExist):
-		_ = os.RemoveAll(dir) // terminal leftover or nothing: start fresh
-		t.meta.FileName = sanitizeName(meta.FileName, meta.TransferID)
-		if err := os.MkdirAll(dir, 0o750); err != nil {
-			return nil, fmt.Errorf("create transfer dir: %w", err)
-		}
-		t.part, err = os.OpenFile(t.partPath(),
-			os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
-		if err != nil {
-			return nil, fmt.Errorf("create part file: %w", err)
-		}
-		size := int64(t.meta.FileSize) //nolint:gosec // validated by Meta
-		if err := t.part.Truncate(size); err != nil {
-			_ = t.part.Close()
-			return nil, fmt.Errorf("allocate part file: %w", err)
-		}
-		t.bitmap = transfer.NewBitmap(t.meta.Chunks)
-		if err := t.saveBitmap(); err != nil {
-			_ = t.part.Close()
-			return nil, err
-		}
-	default:
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("read metadata: %w", err)
 	}
-
+	stored := err == nil
+	switch {
+	case stored && md.Status == transfer.StatusCompleted &&
+		fileExists(md.FinalPath):
+		// The sender never saw COMPLETE: answer as completed again.
+		t.adoptCompleted(md)
+		return t, nil
+	case stored && md.Status != transfer.StatusCompleted &&
+		md.Status != transfer.StatusFailed:
+		err = t.resume(md)
+	default:
+		err = t.create() // terminal leftover or nothing: start fresh
+	}
+	if err != nil {
+		return nil, err
+	}
 	if err := t.setStatus(transfer.StatusTransferring); err != nil {
 		_ = t.part.Close()
 		return nil, err
 	}
 	return t, nil
+}
+
+func (s *Store) writeMeta(dir string, md metaOnDisk) error {
+	md.UpdatedAt = time.Now()
+	raw, err := json.MarshalIndent(md, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeAtomic(filepath.Join(dir, metaFile), raw, s.fsync)
 }
 
 // Meta returns the stored metadata (chunk size may differ from the
@@ -334,6 +297,64 @@ func (t *Transfer) Release(status transfer.Status) {
 	t.unregister()
 }
 
+// adoptCompleted answers a repeated META for a finished transfer whose
+// file is still in place: everything is already received.
+func (t *Transfer) adoptCompleted(md metaOnDisk) {
+	t.meta, t.status, t.finalPath = md.Meta, md.Status, md.FinalPath
+	t.bitmap = transfer.NewBitmap(t.meta.Chunks)
+	for i := range t.meta.Chunks {
+		t.bitmap.Set(i)
+	}
+}
+
+// resume reopens an interrupted transfer from its stored state.
+func (t *Transfer) resume(md metaOnDisk) error {
+	if md.FileSize != t.meta.FileSize || md.Checksum != t.meta.Checksum {
+		return fmt.Errorf("%w: stored size %d/%s, got %d/%s",
+			ErrMetaMismatch, md.FileSize, md.Checksum[:8],
+			t.meta.FileSize, t.meta.Checksum[:8])
+	}
+	t.meta = md.Meta
+	raw, err := os.ReadFile(filepath.Join(t.dir, bitmapFile))
+	if err != nil {
+		return fmt.Errorf("read bitmap: %w", err)
+	}
+	if t.bitmap, err = transfer.LoadBitmap(t.meta.Chunks, raw); err != nil {
+		return err
+	}
+	t.part, err = os.OpenFile(t.partPath(), os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("open part file: %w", err)
+	}
+	return nil
+}
+
+// create starts a transfer from scratch, discarding any leftover state.
+func (t *Transfer) create() error {
+	_ = os.RemoveAll(t.dir)
+	t.meta.FileName = sanitizeName(t.meta.FileName, t.meta.TransferID)
+	if err := os.MkdirAll(t.dir, 0o750); err != nil {
+		return fmt.Errorf("create transfer dir: %w", err)
+	}
+	part, err := os.OpenFile(t.partPath(),
+		os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("create part file: %w", err)
+	}
+	t.part = part
+	size := int64(t.meta.FileSize) //nolint:gosec // validated by Meta
+	if err := t.part.Truncate(size); err != nil {
+		_ = t.part.Close()
+		return fmt.Errorf("allocate part file: %w", err)
+	}
+	t.bitmap = transfer.NewBitmap(t.meta.Chunks)
+	if err := t.saveBitmap(); err != nil {
+		_ = t.part.Close()
+		return err
+	}
+	return nil
+}
+
 // drop ends the transfer in a terminal status: the part file and bitmap
 // go away, metadata stays as a record (and lets a repeated FINALIZE
 // after a lost COMPLETE succeed without resending anything).
@@ -370,15 +391,6 @@ func (t *Transfer) setStatus(st transfer.Status) error {
 func (t *Transfer) saveBitmap() error {
 	return writeAtomic(filepath.Join(t.dir, bitmapFile), t.bitmap.Bytes(),
 		t.store.fsync)
-}
-
-func (s *Store) writeMeta(dir string, md metaOnDisk) error {
-	md.UpdatedAt = time.Now()
-	raw, err := json.MarshalIndent(md, "", "  ")
-	if err != nil {
-		return err
-	}
-	return writeAtomic(filepath.Join(dir, metaFile), raw, s.fsync)
 }
 
 func readMeta(dir string) (metaOnDisk, error) {
@@ -423,4 +435,26 @@ func uniquePath(path string) string {
 			return p
 		}
 	}
+}
+
+// receivedChunks reads the bitmap for status output; terminal states keep
+// no bitmap, so completed reports all chunks and failed none.
+func receivedChunks(dir string, md metaOnDisk) uint64 {
+	if md.Status == transfer.StatusFailed {
+		return 0
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, bitmapFile))
+	if err != nil {
+		return md.Chunks
+	}
+	b, err := transfer.LoadBitmap(md.Chunks, raw)
+	if err != nil {
+		return md.Chunks
+	}
+	return b.Count()
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
