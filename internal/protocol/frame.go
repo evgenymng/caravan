@@ -43,21 +43,6 @@ func WriteFrame(w io.Writer, t Type, payload []byte) error {
 	return writeFrame(w, t, payload, nil)
 }
 
-// writeFrame writes a frame whose payload is head followed by tail, using
-// a single vectored write so large chunks are never copied.
-func writeFrame(w io.Writer, t Type, head, tail []byte) error {
-	var hdr [frameHeaderLen]byte
-	n := 1 + len(head) + len(tail)
-	if n > 1<<31 {
-		return ErrFrameTooLarge
-	}
-	binary.BigEndian.PutUint32(hdr[:], uint32(n)) //nolint:gosec // checked
-	hdr[4] = byte(t)
-	bufs := net.Buffers{hdr[:], head, tail}
-	_, err := bufs.WriteTo(w)
-	return err
-}
-
 // ReadFrame reads one frame, rejecting payloads larger than maxPayload.
 func ReadFrame(r io.Reader, maxPayload uint32) (Type, []byte, error) {
 	var hdr [frameHeaderLen]byte
@@ -105,4 +90,19 @@ func Expect(r io.Reader, want Type, maxPayload uint32, v any) error {
 		return fmt.Errorf("%w: got %d, want %d", ErrUnexpectedType, t, want)
 	}
 	return json.Unmarshal(payload, v)
+}
+
+// writeFrame writes a frame whose payload is head followed by tail, using
+// a single vectored write so large chunks are never copied.
+func writeFrame(w io.Writer, t Type, head, tail []byte) error {
+	var hdr [frameHeaderLen]byte
+	n := 1 + len(head) + len(tail)
+	if n > 1<<31 {
+		return ErrFrameTooLarge
+	}
+	binary.BigEndian.PutUint32(hdr[:], uint32(n)) //nolint:gosec // checked
+	hdr[4] = byte(t)
+	bufs := net.Buffers{hdr[:], head, tail}
+	_, err := bufs.WriteTo(w)
+	return err
 }

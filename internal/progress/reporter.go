@@ -45,6 +45,20 @@ func (r *Reporter) Finish(done, chunks uint64) {
 	r.draw(done, chunks, chunks, true)
 }
 
+// FormatBytes renders n in B/KB/MB/GB with one decimal above bytes.
+func FormatBytes(n uint64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := uint64(unit), 0
+	for m := n / unit; m >= unit && exp < 3; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGT"[exp])
+}
+
 func (r *Reporter) draw(done, chunksDone, chunksTotal uint64, final bool) {
 	elapsed := time.Since(r.start).Seconds()
 	var speed, eta float64
@@ -80,18 +94,4 @@ func render(label string, done, total, chunksDone, chunksTotal uint64,
 	return fmt.Sprintf("%s  %s / %s  %.1f%%  %d/%d chunks  %s/s  ETA %s",
 		label, FormatBytes(done), FormatBytes(total), pct,
 		chunksDone, chunksTotal, FormatBytes(uint64(speed)), etaStr)
-}
-
-// FormatBytes renders n in B/KB/MB/GB with one decimal above bytes.
-func FormatBytes(n uint64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := uint64(unit), 0
-	for m := n / unit; m >= unit && exp < 3; m /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGT"[exp])
 }
