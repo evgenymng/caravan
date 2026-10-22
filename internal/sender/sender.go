@@ -106,17 +106,10 @@ func (s *Sender) Run(ctx context.Context) error {
 	delay := s.opts.RetryDelay
 	for attempt := 0; ; attempt++ {
 		if attempt > 0 {
-			s.reconnects.Add(1)
-			s.log.Info("reconnecting", "attempt", attempt, "delay", delay)
-			select {
-			case <-time.After(delay):
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-			delay = min(2*delay, maxBackoff)
-			if err := s.checkSource(); err != nil {
+			if err := s.waitRetry(ctx, attempt, delay); err != nil {
 				return err
 			}
+			delay = min(2*delay, maxBackoff)
 		}
 		ackedBefore := s.acked.Load()
 		err := s.attempt(ctx)
@@ -175,6 +168,23 @@ func (s *Sender) close() {
 	}
 }
 
+// waitRetry sleeps before a reconnect and refuses to go on if the source
+// file changed meanwhile.
+func (s *Sender) waitRetry(
+	ctx context.Context,
+	attempt int,
+	delay time.Duration,
+) error {
+	s.reconnects.Add(1)
+	s.log.Info("reconnecting", "attempt", attempt, "delay", delay)
+	select {
+	case <-time.After(delay):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return s.checkSource()
+}
+
 // checkSource refuses to resume when the file on disk is no longer the
 // one that was hashed: size or modification time changed.
 func (s *Sender) checkSource() error {
@@ -200,25 +210,44 @@ func (s *Sender) attempt(ctx context.Context) error {
 }
 
 func (s *Sender) session(conn net.Conn) error {
+	rs, err := s.handshake(conn)
+	if err != nil {
+		return err
+	}
+	have := s.applyResumeState(rs)
+	buf := make([]byte, s.meta.ChunkSize)
+	for _, r := range have.Missing() {
+		for i := r[0]; i <= r[1]; i++ {
+			if err := s.sendChunk(conn, i, buf); err != nil {
+				return err
+			}
+		}
+	}
+	return s.finalize(conn)
+}
+
+// handshake runs HELLO and META and returns the receiver's validated
+// resume state, adopting its chunk size if the transfer already exists.
+func (s *Sender) handshake(conn net.Conn) (protocol.ResumeState, error) {
+	var rs protocol.ResumeState
 	if err := s.write(conn, protocol.TypeHello,
 		protocol.Hello{Version: protocol.Version}); err != nil {
-		return err
+		return rs, err
 	}
 	var hello protocol.Hello
 	err := s.expect(conn, protocol.TypeHelloOK, s.opts.AckTimeout, &hello)
 	if err != nil {
-		return err
+		return rs, err
 	}
 	if err := s.write(conn, protocol.TypeMeta, s.meta); err != nil {
-		return err
+		return rs, err
 	}
-	var rs protocol.ResumeState
 	err = s.expect(conn, protocol.TypeResumeState, s.opts.AckTimeout, &rs)
 	if err != nil {
-		return err
+		return rs, err
 	}
 	if err := s.adoptResumeState(&rs); err != nil {
-		return err
+		return rs, err
 	}
 	if rs.ChunkSize != s.meta.ChunkSize {
 		s.log.Warn(
@@ -230,10 +259,18 @@ func (s *Sender) session(conn net.Conn) error {
 		)
 		s.meta.ChunkSize, s.meta.Chunks = rs.ChunkSize, rs.Chunks
 	}
+	return rs, nil
+}
+
+// applyResumeState resets the per-session counters from what the
+// receiver already has and returns it as a bitmap.
+func (s *Sender) applyResumeState(rs protocol.ResumeState) *transfer.Bitmap {
 	have := transfer.NewBitmap(s.meta.Chunks)
+	var bytes uint64
 	for _, r := range rs.Received {
 		for i := r[0]; i <= r[1]; i++ {
 			have.Set(i)
+			bytes += uint64(s.meta.ChunkLen(i))
 		}
 	}
 	if s.ackedBy == nil || s.ackedBy.Len() != s.meta.Chunks {
@@ -241,31 +278,21 @@ func (s *Sender) session(conn net.Conn) error {
 	}
 	s.skipped.Store(have.Count())
 	s.done.Store(have.Count())
-	s.bytesAcked.Store(0)
-	for _, r := range rs.Received {
-		for i := r[0]; i <= r[1]; i++ {
-			s.bytesAcked.Add(uint64(s.meta.ChunkLen(i)))
-		}
-	}
+	s.bytesAcked.Store(bytes)
 	s.log.Info("resume state", "status", rs.Status,
 		"received", rs.ReceivedChunks, "chunks", s.meta.Chunks,
 		"ranges", rs.Received)
+	return have
+}
 
-	buf := make([]byte, s.meta.ChunkSize)
-	for _, r := range have.Missing() {
-		for i := r[0]; i <= r[1]; i++ {
-			if err := s.sendChunk(conn, i, buf); err != nil {
-				return err
-			}
-		}
-	}
-
+// finalize asks the receiver to verify the whole file.
+func (s *Sender) finalize(conn net.Conn) error {
 	if err := s.write(conn, protocol.TypeFinalize,
 		protocol.Finalize{TransferID: s.meta.TransferID}); err != nil {
 		return err
 	}
 	var done protocol.Complete
-	err = s.expect(conn, protocol.TypeComplete, s.opts.FinalizeTimeout, &done)
+	err := s.expect(conn, protocol.TypeComplete, s.opts.FinalizeTimeout, &done)
 	if err != nil {
 		return err
 	}
