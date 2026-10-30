@@ -46,3 +46,25 @@ func TestReceive_RejectsTinyMaxChunkSize(t *testing.T) {
 	defer cancel()
 	require.ErrorContains(t, cmd.ExecuteContext(ctx), "--max-chunk-size")
 }
+
+func TestReceive_RejectsNonPositiveFlags(t *testing.T) {
+	for _, args := range [][]string{
+		{"--max-transfers", "-1"},
+		{"--max-transfers", "0"},
+		{"--read-timeout", "0"},
+	} {
+		cmd := NewRootCmd()
+		cmd.SetArgs(append([]string{"receive", "--addr", "127.0.0.1:0", "--dir", t.TempDir()}, args...))
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		require.ErrorContains(t, cmd.ExecuteContext(ctx), args[0])
+		cancel()
+	}
+}
+
+func TestSend_RejectsNonPositiveFlags(t *testing.T) {
+	for _, flag := range []string{"--retry-delay", "--ack-timeout", "--finalize-timeout"} {
+		cmd := NewRootCmd()
+		cmd.SetArgs([]string{"send", "--file", "x.bin", "--addr", "127.0.0.1:1", flag, "0"})
+		require.ErrorContains(t, cmd.Execute(), flag)
+	}
+}

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"log/slog"
 	"os"
 	"sync"
@@ -25,6 +26,13 @@ func newReceiveCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var err error
 			if cfg.MaxChunkSize, err = parseChunkSize("max-chunk-size", maxChunkSize); err != nil {
+				return err
+			}
+			err = errors.Join(
+				positive("max-transfers", cfg.MaxTransfers),
+				positive("read-timeout", cfg.ReadTimeout),
+			)
+			if err != nil {
 				return err
 			}
 			cfg.Fsync = !noFsync

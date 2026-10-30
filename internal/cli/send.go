@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -23,6 +24,14 @@ func newSendCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var err error
 			if opts.ChunkSize, err = parseChunkSize("chunk-size", chunkSize); err != nil {
+				return err
+			}
+			err = errors.Join(
+				positive("retry-delay", opts.RetryDelay),
+				positive("ack-timeout", opts.AckTimeout),
+				positive("finalize-timeout", opts.FinalizeTimeout),
+			)
+			if err != nil {
 				return err
 			}
 

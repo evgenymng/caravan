@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/evgenymng/caravan/internal/transfer"
 )
@@ -40,4 +41,12 @@ func parseChunkSize(flag, s string) (uint32, error) {
 		return 0, fmt.Errorf("invalid --%s %q, want 4KB..1GB", flag, s)
 	}
 	return uint32(n), nil //nolint:gosec // ≤ 1 GiB
+}
+
+// positive rejects a zero or negative flag value.
+func positive[T int | time.Duration](flag string, v T) error {
+	if v <= 0 {
+		return fmt.Errorf("invalid --%s %v, want > 0", flag, v)
+	}
+	return nil
 }
