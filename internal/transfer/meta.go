@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	// MinChunkSize is the smallest chunk size a receiver accepts.
+	// MinChunkSize is the smallest chunk size a receiver accepts
 	MinChunkSize = 4 << 10
-	// MaxChunks bounds the bitmap a receiver allocates per transfer (8 MB).
+	// MaxChunks bounds the bitmap a receiver allocates per transfer (8 MB)
 	MaxChunks = 1 << 26
 )
 

@@ -113,7 +113,8 @@ func (s *Store) open(meta transfer.Meta) (*Transfer, error) {
 		slog.Warn("stored metadata unreadable, starting over", "transfer_id", meta.TransferID, "error", err)
 	}
 	stored := err == nil
-	if stored && md.Status == transfer.StatusCompleted && sizeIs(md.FinalPath, md.FileSize) {
+	finished := stored && md.Status == transfer.StatusCompleted && sizeIs(md.FinalPath, md.FileSize)
+	if finished {
 		t.adoptCompleted(md) // sender never saw COMPLETE; Finalize re-hashes the file
 		return t, nil
 	}

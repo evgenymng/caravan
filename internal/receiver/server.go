@@ -29,9 +29,9 @@ type Config struct {
 	MaxChunkSize uint32
 	ReadTimeout  time.Duration
 	Fsync        bool
-	// AckDelay delays every ACK; used only to demonstrate sender timeouts.
+	// AckDelay delays every ACK; used only to demonstrate sender timeouts
 	AckDelay time.Duration
-	// OnChunk, if set, is called after every stored chunk.
+	// OnChunk, if set, is called after every stored chunk
 	OnChunk func(meta transfer.Meta, received uint64)
 }
 
