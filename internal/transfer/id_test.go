@@ -40,6 +40,10 @@ func TestNewMeta(t *testing.T) {
 		"too big":   func(m *Meta) { m.ChunkSize = 2 << 20 },
 		"name":      func(m *Meta) { m.FileName = "" },
 		"checksum":  func(m *Meta) { m.Checksum = "sum" },
+		"forged id": func(m *Meta) { m.TransferID = "../../x" },
+		"too many chunks": func(m *Meta) {
+			*m = NewMeta("a.bin", (MaxChunks+1)*4096, 4096, sum)
+		},
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -309,11 +309,6 @@ func (t *Transfer) adoptCompleted(md metaOnDisk) {
 
 // resume reopens an interrupted transfer from its stored state.
 func (t *Transfer) resume(md metaOnDisk) error {
-	if md.FileSize != t.meta.FileSize || md.Checksum != t.meta.Checksum {
-		return fmt.Errorf("%w: stored size %d/%s, got %d/%s",
-			ErrMetaMismatch, md.FileSize, md.Checksum[:8],
-			t.meta.FileSize, t.meta.Checksum[:8])
-	}
 	t.meta = md.Meta
 	raw, err := os.ReadFile(filepath.Join(t.dir, bitmapFile))
 	if err != nil {

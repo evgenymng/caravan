@@ -156,8 +156,7 @@ uint8      type
 |---|---|---|
 | `bad_version` | версия протокола не совпала | фатально |
 | `busy` | лимит одновременных передач | переподключение с backoff |
-| `invalid_meta` | chunk вне `[4 KB, max]`, число chunks не сходится, плохое имя | фатально |
-| `meta_mismatch` | тот же ID, но другой размер/checksum | фатально |
+| `invalid_meta` | transferId не сходится с checksum/size/name, chunk вне `[4 KB, max]`, число chunks не сходится или больше 2²⁶ | фатально |
 | `bad_checksum` | SHA-256 chunk или его длина не совпали | повтор этого chunk (до 3 раз) |
 | `out_of_range` | индекс ≥ chunks | фатально |
 | `incomplete` | FINALIZE при неполном bitmap | — |

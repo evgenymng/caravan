@@ -7,7 +7,6 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -152,19 +151,6 @@ func TestStore_ResumeAfterRestart(t *testing.T) {
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(data, got))
-}
-
-func TestStore_MetaMismatch(t *testing.T) {
-	s := newStore(t, t.TempDir())
-	_, meta := testFile(t, testChunk)
-	tr, err := s.Acquire(meta, func() {})
-	require.NoError(t, err)
-	tr.Release(transfer.StatusInterrupted)
-
-	other := meta
-	other.Checksum = strings.Repeat("b", 64)
-	_, err = s.Acquire(other, func() {})
-	require.ErrorIs(t, err, ErrMetaMismatch)
 }
 
 func TestStore_InvalidMeta(t *testing.T) {

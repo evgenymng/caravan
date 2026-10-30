@@ -11,7 +11,6 @@ const (
 	CodeBadVersion       = "bad_version"
 	CodeBusy             = "busy"
 	CodeInvalidMeta      = "invalid_meta"
-	CodeMetaMismatch     = "meta_mismatch"
 	CodeBadChecksum      = "bad_checksum"
 	CodeOutOfRange       = "out_of_range"
 	CodeIncomplete       = "incomplete"
@@ -71,8 +70,7 @@ func (e *Error) Error() string {
 // Fatal reports whether the error cannot be fixed by reconnecting.
 func (e *Error) Fatal() bool {
 	switch e.Code {
-	case CodeBadVersion, CodeInvalidMeta, CodeMetaMismatch,
-		CodeOutOfRange, CodeChecksumMismatch:
+	case CodeBadVersion, CodeInvalidMeta, CodeOutOfRange, CodeChecksumMismatch:
 		return true
 	}
 	return false

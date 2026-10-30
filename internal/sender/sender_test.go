@@ -47,7 +47,7 @@ func startReceiver(t *testing.T, dir string, cfg receiver.Config) string {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- srv.Serve(ctx) }()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() { cancel(); require.NoError(t, <-done) })
 	return srv.Addr().String()
 }
 

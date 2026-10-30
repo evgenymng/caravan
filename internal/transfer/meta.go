@@ -12,8 +12,12 @@ import (
 	"io"
 )
 
-// MinChunkSize is the smallest chunk size a receiver accepts.
-const MinChunkSize = 4 << 10
+const (
+	// MinChunkSize is the smallest chunk size a receiver accepts.
+	MinChunkSize = 4 << 10
+	// MaxChunks bounds the bitmap a receiver allocates per transfer (8 MB).
+	MaxChunks = 1 << 26
+)
 
 // Status values form the transfer lifecycle on the receiver.
 const (
@@ -65,12 +69,17 @@ func (m Meta) Validate(maxChunkSize uint32) error {
 	switch {
 	case m.TransferID == "" || m.FileName == "" || len(m.Checksum) != 64:
 		return fmt.Errorf("%w: empty id, name or checksum", ErrInvalidMeta)
+	case m.TransferID != TransferID(m.Checksum, m.FileSize, m.FileName):
+		return fmt.Errorf("%w: transfer id does not match", ErrInvalidMeta)
 	case m.ChunkSize < MinChunkSize || m.ChunkSize > maxChunkSize:
 		return fmt.Errorf("%w: chunk size %d outside [%d, %d]",
 			ErrInvalidMeta, m.ChunkSize, MinChunkSize, maxChunkSize)
 	case m.Chunks != (m.FileSize+uint64(m.ChunkSize)-1)/uint64(m.ChunkSize):
 		return fmt.Errorf("%w: %d chunks for %d bytes of %d",
 			ErrInvalidMeta, m.Chunks, m.FileSize, m.ChunkSize)
+	case m.Chunks > MaxChunks:
+		return fmt.Errorf("%w: %d chunks, max %d", ErrInvalidMeta,
+			m.Chunks, MaxChunks)
 	}
 	return nil
 }

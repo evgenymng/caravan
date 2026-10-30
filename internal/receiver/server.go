@@ -294,8 +294,6 @@ func codeFor(err error) string {
 	switch {
 	case errors.Is(err, ErrBusy):
 		return protocol.CodeBusy
-	case errors.Is(err, ErrMetaMismatch):
-		return protocol.CodeMetaMismatch
 	case errors.Is(err, transfer.ErrInvalidMeta):
 		return protocol.CodeInvalidMeta
 	case errors.Is(err, ErrOutOfRange):
