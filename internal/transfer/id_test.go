@@ -30,12 +30,11 @@ func TestNewMeta(t *testing.T) {
 	require.Equal(t, uint64(3), m.Chunks)
 	require.Equal(t, uint32(4096), m.ChunkLen(0))
 	require.Equal(t, uint32(1808), m.ChunkLen(2))
-	require.NoError(t, m.Validate(1<<20))
+	require.NoError(t, m.Validate())
 
 	cases := map[string]func(*Meta){
 		"chunks":    func(m *Meta) { m.Chunks = 5 },
 		"too small": func(m *Meta) { m.ChunkSize = 2 },
-		"too big":   func(m *Meta) { m.ChunkSize = 2 << 20 },
 		"name":      func(m *Meta) { m.FileName = "" },
 		"checksum":  func(m *Meta) { m.Checksum = "sum" },
 		"forged id": func(m *Meta) { m.TransferID = "../../x" },
@@ -47,7 +46,7 @@ func TestNewMeta(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			bad := m
 			mutate(&bad)
-			require.ErrorIs(t, bad.Validate(1<<20), ErrInvalidMeta)
+			require.ErrorIs(t, bad.Validate(), ErrInvalidMeta)
 		})
 	}
 }

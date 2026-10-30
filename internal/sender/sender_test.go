@@ -131,6 +131,29 @@ func TestSender_AdoptsReceiverChunkSize(t *testing.T) {
 	require.Equal(t, data, got)
 }
 
+// A transfer stored with a bigger chunk size than a restarted receiver now allows still finishes.
+func TestSender_ResumesAfterReceiverLowersMaxChunkSize(t *testing.T) {
+	dir := t.TempDir()
+	addr := startReceiver(t, dir, receiver.Config{})
+	path, data := tempFile(t, 4*chunkSize)
+
+	o := opts(path, addr)
+	o.ChunkSize = 2 * chunkSize
+	o.DropAfterChunk = 0
+	o.RetryDelay = time.Hour
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(t, New(o, discard).Run(ctx), context.DeadlineExceeded)
+
+	addr = startReceiver(t, dir, receiver.Config{MaxChunkSize: chunkSize})
+	s := New(opts(path, addr), discard)
+	require.NoError(t, s.Run(context.Background()))
+	require.Equal(t, uint32(2*chunkSize), s.Stats().Meta.ChunkSize)
+	got, err := os.ReadFile(filepath.Join(dir, "src.bin"))
+	require.NoError(t, err)
+	require.Equal(t, data, got)
+}
+
 func TestSender_SourceChanged(t *testing.T) {
 	path, _ := tempFile(t, chunkSize)
 	s := New(opts(path, "127.0.0.1:1"), discard)

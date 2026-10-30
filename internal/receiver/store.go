@@ -22,8 +22,9 @@ const (
 
 // Store owns the receiver's on-disk state: <dir>/.caravan/<id>/ with metadata, bitmap and .part file.
 type Store struct {
-	dir   string
-	fsync bool
+	dir          string
+	fsync        bool
+	maxChunkSize uint32
 
 	mu     sync.Mutex
 	active map[string]*Transfer
@@ -56,12 +57,17 @@ type metaOnDisk struct {
 	UpdatedAt time.Time       `json:"updatedAt"`
 }
 
-// NewStore creates dir and its state directory if needed.
-func NewStore(dir string, fsync bool) (*Store, error) {
+// NewStore creates dir and its state directory if needed; maxChunkSize limits new transfers only.
+func NewStore(dir string, fsync bool, maxChunkSize uint32) (*Store, error) {
 	if err := os.MkdirAll(filepath.Join(dir, stateDirName), 0o750); err != nil {
 		return nil, fmt.Errorf("create state dir: %w", err)
 	}
-	return &Store{dir: dir, fsync: fsync, active: map[string]*Transfer{}}, nil
+	return &Store{
+		dir:          dir,
+		fsync:        fsync,
+		maxChunkSize: maxChunkSize,
+		active:       map[string]*Transfer{},
+	}, nil
 }
 
 // Scan lists transfers stored under dir without touching them.
@@ -115,7 +121,7 @@ func (s *Store) Recover() error {
 
 // Acquire opens or resumes the transfer for exclusive use; stored chunk size wins over meta's.
 func (s *Store) Acquire(meta transfer.Meta) (*Transfer, error) {
-	if err := meta.Validate(1 << 31); err != nil {
+	if err := meta.Validate(); err != nil {
 		return nil, err
 	}
 	s.mu.Lock()
@@ -294,6 +300,9 @@ func (t *Transfer) resume(md metaOnDisk) error {
 
 // create starts a transfer from scratch, discarding any leftover state.
 func (t *Transfer) create() error {
+	if limit := t.store.maxChunkSize; t.meta.ChunkSize > limit {
+		return fmt.Errorf("%w: chunk size %d over %d", transfer.ErrInvalidMeta, t.meta.ChunkSize, limit)
+	}
 	_ = os.RemoveAll(t.dir)
 	t.meta.FileName = sanitizeName(t.meta.FileName, t.meta.TransferID)
 	if err := os.MkdirAll(t.dir, 0o750); err != nil {

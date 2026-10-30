@@ -32,7 +32,7 @@ func chunk(data []byte, m transfer.Meta, i uint64) []byte {
 
 func newStore(t *testing.T, dir string) *Store {
 	t.Helper()
-	s, err := NewStore(dir, true)
+	s, err := NewStore(dir, true, 1<<20)
 	require.NoError(t, err)
 	return s
 }

@@ -58,7 +58,7 @@ type session struct {
 
 // NewServer prepares the store and starts listening on cfg.Addr.
 func NewServer(cfg Config, log *slog.Logger) (*Server, error) {
-	store, err := NewStore(cfg.Dir, cfg.Fsync)
+	store, err := NewStore(cfg.Dir, cfg.Fsync, cfg.MaxChunkSize)
 	if err != nil {
 		return nil, err
 	}
@@ -170,9 +170,6 @@ func (c *session) run() error {
 	if err := c.expect(protocol.TypeMeta, &meta); err != nil {
 		return err
 	}
-	if err := meta.Validate(c.cfg.MaxChunkSize); err != nil {
-		return c.fail(protocol.CodeInvalidMeta, err.Error(), nil)
-	}
 	tr, err := c.store.Acquire(meta)
 	if err != nil {
 		return c.fail(codeFor(err), err.Error(), nil)
@@ -201,7 +198,7 @@ func (c *session) run() error {
 }
 
 func (c *session) loop(tr *Transfer) error {
-	maxPayload := c.cfg.MaxChunkSize + frameSlack
+	maxPayload := tr.Meta().ChunkSize + frameSlack
 	for {
 		_ = c.conn.SetReadDeadline(time.Now().Add(c.cfg.ReadTimeout))
 		typ, payload, err := protocol.ReadFrame(c.conn, maxPayload)

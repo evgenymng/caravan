@@ -67,21 +67,15 @@ func (m Meta) ChunkLen(i uint64) uint32 {
 	return m.ChunkSize
 }
 
-// Validate checks internal consistency against the receiver's limits.
-func (m Meta) Validate(maxChunkSize uint32) error {
+// Validate checks that the fields agree with each other.
+func (m Meta) Validate() error {
 	switch {
 	case m.TransferID == "" || m.FileName == "" || len(m.Checksum) != 64:
 		return fmt.Errorf("%w: empty id, name or checksum", ErrInvalidMeta)
 	case m.TransferID != TransferID(m.Checksum, m.FileSize, m.FileName):
 		return fmt.Errorf("%w: transfer id does not match", ErrInvalidMeta)
-	case m.ChunkSize < MinChunkSize || m.ChunkSize > maxChunkSize:
-		return fmt.Errorf(
-			"%w: chunk size %d outside [%d, %d]",
-			ErrInvalidMeta,
-			m.ChunkSize,
-			MinChunkSize,
-			maxChunkSize,
-		)
+	case m.ChunkSize < MinChunkSize:
+		return fmt.Errorf("%w: chunk size %d below %d", ErrInvalidMeta, m.ChunkSize, MinChunkSize)
 	case m.Chunks != ChunkCount(m.FileSize, m.ChunkSize):
 		return fmt.Errorf("%w: %d chunks for %d bytes", ErrInvalidMeta, m.Chunks, m.FileSize)
 	case m.Chunks > MaxChunks:
