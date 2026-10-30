@@ -328,13 +328,10 @@ func (t *Transfer) create() error {
 
 // drop ends the transfer in a terminal status; only metadata stays, as a record.
 func (t *Transfer) drop(status transfer.Status) {
-	t.status = status
 	_ = t.part.Close()
 	_ = os.Remove(t.partPath())
 	_ = os.Remove(filepath.Join(t.dir, bitmapFile))
-	_ = t.store.writeMeta(t.dir, metaOnDisk{
-		Meta: t.meta, Status: status, FinalPath: t.finalPath,
-	})
+	_ = t.setStatus(status)
 	t.unregister()
 }
 
@@ -353,9 +350,7 @@ func (t *Transfer) partPath() string {
 
 func (t *Transfer) setStatus(st transfer.Status) error {
 	t.status = st
-	return t.store.writeMeta(t.dir, metaOnDisk{
-		Meta: t.meta, Status: st, FinalPath: t.finalPath,
-	})
+	return t.store.writeMeta(t.dir, metaOnDisk{Meta: t.meta, Status: st, FinalPath: t.finalPath})
 }
 
 func (t *Transfer) saveBitmap() error {

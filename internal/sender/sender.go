@@ -343,10 +343,7 @@ func (s *Sender) sendChunk(conn net.Conn, i uint64, buf []byte) error {
 // shouldDrop implements the demo-only DropAfterChunk option (once).
 func (s *Sender) shouldDrop(i uint64) bool {
 	d := s.opts.DropAfterChunk
-	if d < 0 || s.dropped || i != uint64(d) { //nolint:gosec // d ≥ 0
-		return false
-	}
-	return true
+	return d >= 0 && !s.dropped && i == uint64(d) //nolint:gosec // d ≥ 0
 }
 
 func (s *Sender) write(conn net.Conn, t protocol.Type, v any) error {

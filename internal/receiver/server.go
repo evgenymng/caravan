@@ -236,7 +236,8 @@ func (c *session) handleFinalize(tr *Transfer) error {
 	}
 	c.log.Info("transfer completed", "path", path, "checksum", tr.Meta().Checksum)
 	return c.write(protocol.TypeComplete, protocol.Complete{
-		TransferID: tr.Meta().TransferID, Checksum: tr.Meta().Checksum,
+		TransferID: tr.Meta().TransferID,
+		Checksum:   tr.Meta().Checksum,
 	})
 }
 
