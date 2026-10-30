@@ -12,7 +12,12 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	err := run()
+	if errors.Is(err, context.Canceled) {
+		fmt.Fprintln(os.Stderr, "interrupted")
+		os.Exit(130) // like a shell, so `caravan send ... && rm f` keeps f
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "fatal:", err)
 		os.Exit(1)
 	}
@@ -21,11 +26,5 @@ func main() {
 func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-
-	err := cli.Execute(ctx)
-	if errors.Is(err, context.Canceled) {
-		fmt.Fprintln(os.Stderr, "interrupted")
-		return nil
-	}
-	return err
+	return cli.Execute(ctx)
 }
