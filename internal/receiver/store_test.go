@@ -326,3 +326,71 @@ func TestStore_LongFileName(t *testing.T) {
 	_, err = tr.Finalize(context.Background())
 	require.NoError(t, err)
 }
+
+func TestStore_CompletedAlteredFileFailsOnFinalize(t *testing.T) {
+	dir := t.TempDir()
+	s := newStore(t, dir)
+	data, meta := testFile(t, testChunk)
+	tr, err := s.Acquire(meta)
+	require.NoError(t, err)
+	_, err = tr.WriteChunk(0, data)
+	require.NoError(t, err)
+	path, err := tr.Finalize(context.Background())
+	require.NoError(t, err)
+	data[0] ^= 0xff // same size: Acquire cannot tell without hashing, Finalize does
+	require.NoError(t, os.WriteFile(path, data, 0o600))
+
+	again, err := s.Acquire(meta)
+	require.NoError(t, err)
+	require.Equal(t, transfer.StatusCompleted, again.Status())
+	require.Equal(t, meta.Chunks, again.ReceivedChunks())
+	_, err = again.Finalize(context.Background())
+	require.ErrorIs(t, err, ErrChecksumMismatch)
+
+	fresh, err := s.Acquire(meta)
+	require.NoError(t, err)
+	defer fresh.Release(transfer.StatusInterrupted)
+	require.Equal(t, transfer.StatusTransferring, fresh.Status())
+	require.Equal(t, uint64(0), fresh.ReceivedChunks())
+}
+
+// interrupted stores one chunk of a transfer, releases it and returns its state dir.
+func interrupted(t *testing.T, s *Store, meta transfer.Meta, data []byte) string {
+	t.Helper()
+	tr, err := s.Acquire(meta)
+	require.NoError(t, err)
+	_, err = tr.WriteChunk(0, chunk(data, meta, 0))
+	require.NoError(t, err)
+	tr.Release(transfer.StatusInterrupted)
+	return tr.dir
+}
+
+func TestStore_DamagedBitmapStartsOver(t *testing.T) {
+	s := newStore(t, t.TempDir())
+	data, meta := testFile(t, 2*testChunk)
+	state := interrupted(t, s, meta, data)
+	require.NoError(t, os.WriteFile(filepath.Join(state, "received.bitmap"), []byte("xx"), 0o600))
+
+	tr, err := s.Acquire(meta)
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), tr.ReceivedChunks())
+	for i := range meta.Chunks {
+		_, err = tr.WriteChunk(i, chunk(data, meta, i))
+		require.NoError(t, err)
+	}
+	_, err = tr.Finalize(context.Background())
+	require.NoError(t, err)
+}
+
+func TestStore_DamagedMetaStartsOver(t *testing.T) {
+	s := newStore(t, t.TempDir())
+	data, meta := testFile(t, 2*testChunk)
+	state := interrupted(t, s, meta, data)
+	require.NoError(t, os.WriteFile(filepath.Join(state, "metadata.json"), []byte(`{"tr`), 0o600))
+
+	tr, err := s.Acquire(meta)
+	require.NoError(t, err)
+	defer tr.Release(transfer.StatusInterrupted)
+	require.Equal(t, transfer.StatusTransferring, tr.Status())
+	require.Equal(t, uint64(0), tr.ReceivedChunks())
+}

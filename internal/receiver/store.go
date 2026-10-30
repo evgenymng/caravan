@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -143,12 +145,11 @@ func (s *Store) open(meta transfer.Meta) (*Transfer, error) {
 
 	md, err := readMeta(dir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("read metadata: %w", err)
+		slog.Warn("stored metadata unreadable, starting over", "transfer_id", meta.TransferID, "error", err)
 	}
 	stored := err == nil
-	finished := stored && md.Status == transfer.StatusCompleted && fileMatches(md.FinalPath, md.Checksum)
-	if finished {
-		t.adoptCompleted(md) // sender never saw COMPLETE
+	if stored && md.Status == transfer.StatusCompleted && sizeIs(md.FinalPath, md.FileSize) {
+		t.adoptCompleted(md) // sender never saw COMPLETE; Finalize re-hashes the file
 		return t, nil
 	}
 	if err := t.load(md, stored); err != nil {
@@ -207,6 +208,9 @@ func (t *Transfer) WriteChunk(index uint64, data []byte) (bool, error) {
 // Finalize verifies the whole file and moves it into the downloads directory.
 func (t *Transfer) Finalize(ctx context.Context) (string, error) {
 	if t.status == transfer.StatusCompleted {
+		if err := t.verifyFinal(ctx); err != nil {
+			return "", err
+		}
 		t.unregister()
 		return t.finalPath, nil
 	}
@@ -216,13 +220,8 @@ func (t *Transfer) Finalize(ctx context.Context) (string, error) {
 	if _, err := t.part.Seek(0, 0); err != nil {
 		return "", err
 	}
-	sum, err := transfer.HashReader(ctx, t.part)
-	if err != nil {
-		return "", fmt.Errorf("hash part file: %w", err)
-	}
-	if sum != t.meta.Checksum {
-		t.drop(transfer.StatusFailed)
-		return "", fmt.Errorf("%w: got %s, want %s", ErrChecksumMismatch, sum[:8], t.meta.Checksum[:8])
+	if err := t.verify(ctx, t.part); err != nil {
+		return "", err
 	}
 	if err := t.part.Close(); err != nil {
 		return "", err
@@ -233,7 +232,8 @@ func (t *Transfer) Finalize(ctx context.Context) (string, error) {
 	// the .part file.
 	t.store.mu.Lock()
 	t.finalPath = uniquePath(filepath.Join(t.store.dir, t.meta.FileName))
-	if err = t.setStatus(transfer.StatusCompleted); err == nil {
+	err := t.setStatus(transfer.StatusCompleted)
+	if err == nil {
 		err = os.Rename(t.partPath(), t.finalPath)
 	}
 	if err == nil && t.store.fsync {
@@ -270,31 +270,57 @@ func (t *Transfer) adoptCompleted(md metaOnDisk) {
 	}
 }
 
-// load resumes stored state while its bitmap is there, otherwise starts from scratch.
+// verifyFinal re-hashes the finished file adopted in Acquire, where hashing would hold the store lock.
+func (t *Transfer) verifyFinal(ctx context.Context) error {
+	f, err := os.Open(t.finalPath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	return t.verify(ctx, f)
+}
+
+// verify hashes r against the checksum; a mismatch fails the transfer so the next send starts over.
+func (t *Transfer) verify(ctx context.Context, r io.Reader) error {
+	sum, err := transfer.HashReader(ctx, r)
+	if err != nil {
+		return fmt.Errorf("hash file: %w", err)
+	}
+	if sum == t.meta.Checksum {
+		return nil
+	}
+	t.drop(transfer.StatusFailed)
+	return fmt.Errorf("%w: got %s, want %s", ErrChecksumMismatch, sum[:8], t.meta.Checksum[:8])
+}
+
+// load resumes stored state; nothing stored, a failed or a damaged one starts from scratch.
 func (t *Transfer) load(md metaOnDisk, stored bool) error {
 	if !stored || md.Status == transfer.StatusFailed {
 		return t.create()
 	}
-	if !fileExists(filepath.Join(t.dir, bitmapFile)) {
-		return t.create() // completed, but the file is gone or changed
+	err := t.resume(md)
+	if err == nil {
+		return nil
 	}
-	return t.resume(md)
+	slog.Warn("stored state unusable, starting over", "transfer_id", t.meta.TransferID, "error", err)
+	return t.create()
 }
 
-// resume reopens an interrupted transfer from its stored state.
+// resume reopens an interrupted transfer from its stored state, touching t only on success.
 func (t *Transfer) resume(md metaOnDisk) error {
-	t.meta = md.Meta
 	raw, err := os.ReadFile(filepath.Join(t.dir, bitmapFile))
 	if err != nil {
-		return fmt.Errorf("read bitmap: %w", err)
-	}
-	if t.bitmap, err = transfer.LoadBitmap(t.meta.Chunks, raw); err != nil {
 		return err
 	}
-	t.part, err = os.OpenFile(t.partPath(), os.O_RDWR, 0o600)
+	bitmap, err := transfer.LoadBitmap(md.Chunks, raw)
 	if err != nil {
-		return fmt.Errorf("open part file: %w", err)
+		return err
 	}
+	part, err := os.OpenFile(filepath.Join(t.dir, md.FileName+".part"), os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	t.meta, t.bitmap, t.part = md.Meta, bitmap, part
 	return nil
 }
 
@@ -435,19 +461,8 @@ func receivedChunks(dir string, md metaOnDisk) uint64 {
 	return b.Count()
 }
 
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
-// fileMatches reports whether the file at path still has the checksum recorded at completion.
-// shortcut: hashes under the store lock, move out if completed re-sends become frequent.
-func fileMatches(path, checksum string) bool {
-	f, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	defer func() { _ = f.Close() }()
-	sum, err := transfer.HashReader(context.Background(), f)
-	return err == nil && sum == checksum
+// sizeIs reports whether the file at path exists with n bytes.
+func sizeIs(path string, n uint64) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.Size() == int64(n) //nolint:gosec // validated by Meta
 }
