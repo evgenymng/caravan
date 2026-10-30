@@ -149,8 +149,9 @@ func (s *Store) open(meta transfer.Meta) (*Transfer, error) {
 		// The sender never saw COMPLETE: answer as completed again.
 		t.adoptCompleted(md)
 		return t, nil
-	case stored && md.Status != transfer.StatusCompleted &&
-		md.Status != transfer.StatusFailed:
+	case stored && md.Status != transfer.StatusFailed &&
+		fileExists(filepath.Join(dir, bitmapFile)):
+		// In progress, or completed but crashed before the .part moved.
 		err = t.resume(md)
 	default:
 		err = t.create() // terminal leftover or nothing: start fresh
@@ -253,17 +254,20 @@ func (t *Transfer) Finalize() (string, error) {
 		return "", err
 	}
 	// Under the store lock so two transfers with the same name cannot
-	// pick the same free path.
+	// pick the same free path. Completion is recorded before the move so
+	// a crash in between resumes with a full bitmap instead of losing
+	// the .part file.
 	t.store.mu.Lock()
-	final := uniquePath(filepath.Join(t.store.dir, t.meta.FileName))
-	err = os.Rename(t.partPath(), final)
+	t.finalPath = uniquePath(filepath.Join(t.store.dir, t.meta.FileName))
+	if err = t.setStatus(transfer.StatusCompleted); err == nil {
+		err = os.Rename(t.partPath(), t.finalPath)
+	}
 	t.store.mu.Unlock()
 	if err != nil {
 		return "", fmt.Errorf("move finished file: %w", err)
 	}
-	t.finalPath = final
 	t.drop(transfer.StatusCompleted)
-	return final, nil
+	return t.finalPath, nil
 }
 
 // Release records status (normally interrupted), closes the part file
@@ -363,7 +367,9 @@ func (t *Transfer) partPath() string {
 
 func (t *Transfer) setStatus(st transfer.Status) error {
 	t.status = st
-	return t.store.writeMeta(t.dir, metaOnDisk{Meta: t.meta, Status: st})
+	return t.store.writeMeta(t.dir, metaOnDisk{
+		Meta: t.meta, Status: st, FinalPath: t.finalPath,
+	})
 }
 
 func (t *Transfer) saveBitmap() error {

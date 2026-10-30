@@ -251,3 +251,32 @@ func TestStore_CompletedIsIdempotent(t *testing.T) {
 	require.Nil(t, fresh.Received())
 	fresh.Release(transfer.StatusInterrupted)
 }
+
+// A crash after completion was recorded but before the .part file moved
+// must resume with every chunk present, not start over or fail.
+func TestStore_CrashBeforeRenameResumes(t *testing.T) {
+	dir := t.TempDir()
+	s := newStore(t, dir)
+	data, meta := testFile(t, 2*testChunk)
+	tr, err := s.Acquire(meta)
+	require.NoError(t, err)
+	for i := range meta.Chunks {
+		_, err := tr.WriteChunk(i, chunk(data, meta, i))
+		require.NoError(t, err)
+	}
+	state := filepath.Join(dir, ".caravan", meta.TransferID)
+	require.NoError(t, s.writeMeta(state, metaOnDisk{
+		Meta: meta, Status: transfer.StatusCompleted,
+		FinalPath: filepath.Join(dir, "f.bin"),
+	}))
+	_ = tr.part.Close() // simulated crash: no Release, new process below
+
+	tr, err = newStore(t, dir).Acquire(meta)
+	require.NoError(t, err)
+	require.Equal(t, meta.Chunks, tr.ReceivedChunks())
+	path, err := tr.Finalize()
+	require.NoError(t, err)
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, data, got)
+}
