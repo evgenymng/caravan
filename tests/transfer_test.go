@@ -26,6 +26,19 @@ func TestPlainTransfer(t *testing.T) {
 	require.NoFileExists(t, filepath.Join(dir, ".caravan", s.Stats().Meta.TransferID))
 }
 
+func TestEmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	rcv := startReceiver(t, receiver.Config{Dir: dir})
+	path, sum := tempFile(t, "empty.txt", 0)
+
+	opts := senderOpts(path, rcv.Addr().String(), 256<<10)
+	opts.MaxRetries = 1
+	s := sender.New(opts, discard)
+	require.NoError(t, s.Run(context.Background()))
+	require.Equal(t, uint64(0), s.Stats().Meta.Chunks)
+	require.Equal(t, sum, fileSum(t, filepath.Join(dir, "empty.txt")))
+}
+
 func TestHundredMegabytes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("100 MB transfer skipped in -short mode")
