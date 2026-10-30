@@ -145,7 +145,7 @@ func (s *Store) open(meta transfer.Meta) (*Transfer, error) {
 	stored := err == nil
 	switch {
 	case stored && md.Status == transfer.StatusCompleted &&
-		fileExists(md.FinalPath):
+		fileMatches(md.FinalPath, md.Checksum):
 		// The sender never saw COMPLETE: answer as completed again.
 		t.adoptCompleted(md)
 		return t, nil
@@ -441,4 +441,18 @@ func receivedChunks(dir string, md metaOnDisk) uint64 {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// fileMatches reports whether the file at path still has the checksum
+// recorded at completion; a replaced or edited file starts over.
+// shortcut: hashes under the store lock, move out if completed re-sends
+// become frequent.
+func fileMatches(path, checksum string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	sum, err := transfer.HashReader(context.Background(), f)
+	return err == nil && sum == checksum
 }

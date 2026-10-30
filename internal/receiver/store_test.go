@@ -280,3 +280,22 @@ func TestStore_CrashBeforeRenameResumes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, data, got)
 }
+
+func TestStore_CompletedFileChangedStartsOver(t *testing.T) {
+	dir := t.TempDir()
+	s := newStore(t, dir)
+	data, meta := testFile(t, testChunk)
+	tr, err := s.Acquire(meta)
+	require.NoError(t, err)
+	_, err = tr.WriteChunk(0, data)
+	require.NoError(t, err)
+	path, err := tr.Finalize()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, []byte("changed"), 0o600))
+
+	tr, err = s.Acquire(meta)
+	require.NoError(t, err)
+	defer tr.Release(transfer.StatusInterrupted)
+	require.Equal(t, transfer.StatusTransferring, tr.Status())
+	require.Equal(t, uint64(0), tr.ReceivedChunks())
+}
