@@ -90,21 +90,25 @@ func (s *Server) Serve(ctx context.Context) error {
 	stop := context.AfterFunc(ctx, func() { _ = s.ln.Close() })
 	defer stop()
 
-	for {
-		conn, err := s.ln.Accept()
-		if err != nil {
-			if ctx.Err() == nil {
-				return fmt.Errorf("accept: %w", err)
-			}
-			break
-		}
-		s.wg.Go(func() { s.handle(sessions, conn) })
-	}
-
+	err := s.acceptLoop(sessions)
 	s.log.Info("shutting down")
 	cancelSessions()
 	s.waitSessions()
-	return nil
+	if ctx.Err() != nil {
+		return nil
+	}
+	return fmt.Errorf("accept: %w", err)
+}
+
+// acceptLoop runs a session per connection until Accept fails.
+func (s *Server) acceptLoop(ctx context.Context) error {
+	for {
+		conn, err := s.ln.Accept()
+		if err != nil {
+			return err
+		}
+		s.wg.Go(func() { s.handle(ctx, conn) })
+	}
 }
 
 func (s *Server) logStored() {

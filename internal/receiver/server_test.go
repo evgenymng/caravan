@@ -205,6 +205,19 @@ func TestServer_ShutdownMarksInterrupted(t *testing.T) {
 	require.Equal(t, transfer.StatusInterrupted, md.Status)
 }
 
+func TestServer_AcceptErrorWaitsForSessions(t *testing.T) {
+	dir := t.TempDir()
+	srv, _, done := startServer(t, Config{Dir: dir})
+	_, meta := testFile(t, 2*testChunk)
+	handshake(t, dial(t, srv), meta)
+
+	_ = srv.ln.Close()
+	require.Error(t, done())
+	md, err := readMeta(filepath.Join(dir, ".caravan", meta.TransferID))
+	require.NoError(t, err)
+	require.Equal(t, transfer.StatusInterrupted, md.Status)
+}
+
 func TestServer_RejectsHugeControlFrame(t *testing.T) {
 	srv, _, _ := startServer(t, Config{MaxChunkSize: 64 << 20})
 	conn := dial(t, srv)
