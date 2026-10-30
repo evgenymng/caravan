@@ -76,7 +76,7 @@ func newSendCmd() *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&opts.Path, "file", "", "file to send (required)")
 	f.StringVar(&opts.Addr, "addr", "", "receiver address host:port (required)")
-	f.StringVar(&chunkSize, "chunk-size", "1MB", "chunk size, 4KB..1GB, e.g. 256KB, 1MB, 4MB")
+	f.StringVar(&chunkSize, "chunk-size", "1MB", "chunk size, 4KB..64MB, e.g. 256KB, 1MB, 4MB")
 	f.IntVar(&opts.MaxRetries, "max-retries", 10, "reconnect attempts after a connection loss (0 = forever)")
 	f.DurationVar(&opts.RetryDelay, "retry-delay", time.Second, "first reconnect delay, doubles up to 30s")
 	f.DurationVar(&opts.DialTimeout, "dial-timeout", 5*time.Second, "TCP connect timeout")

@@ -26,3 +26,13 @@ func TestParseSize(t *testing.T) {
 		require.Error(t, err, in)
 	}
 }
+
+func TestParseChunkSize(t *testing.T) {
+	n, err := parseChunkSize("chunk-size", "64MB")
+	require.NoError(t, err)
+	require.Equal(t, uint32(64<<20), n)
+	for _, in := range []string{"1KB", "65MB", "1GB"} {
+		_, err := parseChunkSize("chunk-size", in)
+		require.ErrorContains(t, err, "--chunk-size", in)
+	}
+}

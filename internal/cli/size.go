@@ -34,13 +34,13 @@ func parseSize(s string) (uint64, error) {
 	return n * mult, nil
 }
 
-// parseChunkSize parses the value of a chunk size flag and checks it is within 4KB..1GB.
+// parseChunkSize parses the value of a chunk size flag and checks it is within 4KB..64MB.
 func parseChunkSize(flag, s string) (uint32, error) {
 	n, err := parseSize(s)
-	if err != nil || n < transfer.MinChunkSize || n > 1<<30 {
-		return 0, fmt.Errorf("invalid --%s %q, want 4KB..1GB", flag, s)
+	if err != nil || n < transfer.MinChunkSize || n > 64<<20 {
+		return 0, fmt.Errorf("invalid --%s %q, want 4KB..64MB", flag, s)
 	}
-	return uint32(n), nil //nolint:gosec // ≤ 1 GiB
+	return uint32(n), nil //nolint:gosec // ≤ 64 MiB
 }
 
 // positive rejects a zero or negative flag value.
