@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/evgenymng/caravan/internal/transfer"
@@ -312,4 +313,16 @@ func TestStore_FinalizeCancelledKeepsPart(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 	require.Equal(t, transfer.StatusTransferring, tr.Status())
 	require.FileExists(t, filepath.Join(dir, ".caravan", meta.TransferID, "f.bin.part"))
+}
+
+func TestStore_LongFileName(t *testing.T) {
+	dir := t.TempDir()
+	data, meta := testFile(t, testChunk)
+	meta = transfer.NewMeta(strings.Repeat("x", 255), meta.FileSize, meta.ChunkSize, meta.Checksum)
+	tr, err := newStore(t, dir).Acquire(meta)
+	require.NoError(t, err)
+	_, err = tr.WriteChunk(0, data)
+	require.NoError(t, err)
+	_, err = tr.Finalize(context.Background())
+	require.NoError(t, err)
 }

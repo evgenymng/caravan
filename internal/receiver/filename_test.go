@@ -22,7 +22,8 @@ func TestSanitizeName(t *testing.T) {
 		"a\x00b":                 "ab",
 		"отчёт.pdf":              "отчёт.pdf",
 		".hidden":                "hidden",
-		strings.Repeat("x", 300): strings.Repeat("x", 255),
+		strings.Repeat("x", 300): strings.Repeat("x", 240),
+		strings.Repeat("я", 200): strings.Repeat("я", 120),
 	}
 	for in, want := range cases {
 		t.Run(in, func(t *testing.T) {

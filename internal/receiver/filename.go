@@ -6,6 +6,9 @@ import (
 	"unicode"
 )
 
+// maxName leaves room for ".part" and " (n)" within the usual 255-byte file name limit.
+const maxName = 240
+
 // sanitizeName drops path components, control characters and leading dots; empty becomes fallback.
 func sanitizeName(name, fallback string) string {
 	name = strings.ReplaceAll(name, `\`, "/")
@@ -18,9 +21,8 @@ func sanitizeName(name, fallback string) string {
 	}, name)
 	name = strings.TrimLeft(name, ".")
 
-	nameRunes := []rune(name)
-	if len(nameRunes) > 255 {
-		name = string(nameRunes[:255])
+	if len(name) > maxName {
+		name = strings.ToValidUTF8(name[:maxName], "")
 	}
 
 	// Base("/") is "/"; anything still holding a separator is not a name.
