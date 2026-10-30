@@ -203,6 +203,9 @@ func (s *Sender) session(conn net.Conn) error {
 			}
 		}
 	}
+	if err := s.checkSource(); err != nil {
+		return err
+	}
 	return s.finalize(conn)
 }
 
@@ -362,5 +365,5 @@ func fatal(err error) bool {
 	if errors.As(err, &perr) {
 		return perr.Fatal()
 	}
-	return errors.Is(err, ErrBadResumeState)
+	return errors.Is(err, ErrBadResumeState) || errors.Is(err, ErrSourceChanged)
 }

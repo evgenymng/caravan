@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -164,6 +165,23 @@ func TestSender_SourceChanged(t *testing.T) {
 	require.NoError(t, s.checkSource())
 	require.NoError(t, os.WriteFile(path, []byte("changed"), 0o600))
 	require.ErrorIs(t, s.checkSource(), ErrSourceChanged)
+}
+
+func TestSender_SourceChangedInPlace(t *testing.T) {
+	addr := startReceiver(t, t.TempDir(), receiver.Config{})
+	path, data := tempFile(t, 2*chunkSize)
+	changed := slices.Clone(data)
+	changed[len(changed)-1] ^= 0xff
+	later := time.Now().Add(time.Hour)
+
+	o := opts(path, addr)
+	o.OnProgress = func(Stats) {
+		require.NoError(t, os.WriteFile(path, changed, 0o600))
+		require.NoError(t, os.Chtimes(path, later, later))
+	}
+	s := New(o, discard)
+	require.ErrorIs(t, s.Run(context.Background()), ErrSourceChanged)
+	require.Equal(t, 0, s.Stats().Reconnects)
 }
 
 func TestSender_FatalErrorNoRetry(t *testing.T) {
