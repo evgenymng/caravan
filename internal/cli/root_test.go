@@ -43,3 +43,12 @@ func TestParseLevel(t *testing.T) {
 		})
 	}
 }
+
+func TestSend_RejectsTinyChunkSize(t *testing.T) {
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{
+		"send", "--file", "x.bin", "--addr", "127.0.0.1:1",
+		"--chunk-size", "0",
+	})
+	require.ErrorContains(t, cmd.Execute(), "--chunk-size")
+}

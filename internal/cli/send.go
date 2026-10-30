@@ -10,6 +10,7 @@ import (
 
 	"github.com/evgenymng/caravan/internal/progress"
 	"github.com/evgenymng/caravan/internal/sender"
+	"github.com/evgenymng/caravan/internal/transfer"
 )
 
 func newSendCmd() *cobra.Command {
@@ -22,8 +23,9 @@ func newSendCmd() *cobra.Command {
 		Short: "Send a file to a receiver",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			size, err := parseSize(chunkSize)
-			if err != nil || size > 1<<30 {
-				return fmt.Errorf("invalid --chunk-size %q", chunkSize)
+			if err != nil || size < transfer.MinChunkSize || size > 1<<30 {
+				return fmt.Errorf("invalid --chunk-size %q, want 4KB..1GB",
+					chunkSize)
 			}
 			opts.ChunkSize = uint32(size) //nolint:gosec // ≤ 1 GiB
 
@@ -66,7 +68,7 @@ func newSendCmd() *cobra.Command {
 		&chunkSize,
 		"chunk-size",
 		"1MB",
-		"chunk size, e.g. 256KB, 1MB, 4MB",
+		"chunk size, 4KB..1GB, e.g. 256KB, 1MB, 4MB",
 	)
 	f.IntVar(&opts.MaxRetries, "max-retries", 10,
 		"reconnect attempts after a connection loss (0 = forever)")
