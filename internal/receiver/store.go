@@ -262,6 +262,9 @@ func (t *Transfer) Finalize(ctx context.Context) (string, error) {
 	if err = t.setStatus(transfer.StatusCompleted); err == nil {
 		err = os.Rename(t.partPath(), t.finalPath)
 	}
+	if err == nil && t.store.fsync {
+		err = syncDir(t.store.dir)
+	}
 	t.store.mu.Unlock()
 	if err != nil {
 		return "", fmt.Errorf("move finished file: %w", err)
@@ -403,7 +406,26 @@ func writeAtomic(path string, data []byte, fsync bool) error {
 	if err != nil {
 		return fmt.Errorf("write %s: %w", filepath.Base(path), err)
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	if !fsync {
+		return nil
+	}
+	return syncDir(filepath.Dir(path))
+}
+
+// syncDir flushes a directory so a rename inside it survives a power loss.
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	if err := d.Sync(); err != nil {
+		_ = d.Close()
+		return fmt.Errorf("sync dir %s: %w", dir, err)
+	}
+	return d.Close()
 }
 
 // uniquePath appends " (n)" before the extension until the path is free.
