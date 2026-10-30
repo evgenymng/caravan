@@ -67,6 +67,11 @@ func (m Meta) ChunkLen(i uint64) uint32 {
 	return m.ChunkSize
 }
 
+// ChunksLen returns the byte length of n chunks, capped at the file size.
+func (m Meta) ChunksLen(n uint64) uint64 {
+	return min(n*uint64(m.ChunkSize), m.FileSize)
+}
+
 // Validate checks that the fields agree with each other.
 func (m Meta) Validate() error {
 	switch {

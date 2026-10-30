@@ -16,10 +16,8 @@ import (
 )
 
 const (
-	writeTimeout   = 30 * time.Second
 	maxBackoff     = 30 * time.Second
 	maxChunkResend = 3
-	controlPayload = 1 << 16
 )
 
 var (
@@ -300,7 +298,7 @@ func (s *Sender) sendChunk(conn net.Conn, i uint64, buf []byte) error {
 		if _, err := s.file.ReadAt(data, off); err != nil {
 			return fmt.Errorf("%w: read chunk %d: %w", ErrSourceChanged, i, err)
 		}
-		_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+		_ = conn.SetWriteDeadline(time.Now().Add(protocol.WriteTimeout))
 		if err := protocol.WriteChunk(conn, i, data); err != nil {
 			return err
 		}
@@ -350,13 +348,13 @@ func (s *Sender) shouldDrop(i uint64) bool {
 }
 
 func (s *Sender) write(conn net.Conn, t protocol.Type, v any) error {
-	_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+	_ = conn.SetWriteDeadline(time.Now().Add(protocol.WriteTimeout))
 	return protocol.WriteJSON(conn, t, v)
 }
 
 func (s *Sender) expect(conn net.Conn, t protocol.Type, timeout time.Duration, v any) error {
 	_ = conn.SetReadDeadline(time.Now().Add(timeout))
-	return protocol.Expect(conn, t, controlPayload, v)
+	return protocol.Expect(conn, t, protocol.MaxControlPayload, v)
 }
 
 // fatal reports errors that reconnecting cannot fix.

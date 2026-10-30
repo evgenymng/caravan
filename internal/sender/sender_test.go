@@ -232,10 +232,10 @@ func fakeReceiver(t *testing.T, rs protocol.ResumeState) string {
 			go func() {
 				defer func() { _ = conn.Close() }()
 				var hello protocol.Hello
-				_ = protocol.Expect(conn, protocol.TypeHello, 1<<16, &hello)
+				_ = protocol.Expect(conn, protocol.TypeHello, protocol.MaxControlPayload, &hello)
 				_ = protocol.WriteJSON(conn, protocol.TypeHelloOK, hello)
-				var meta protocol.Meta
-				_ = protocol.Expect(conn, protocol.TypeMeta, 1<<16, &meta)
+				var meta transfer.Meta
+				_ = protocol.Expect(conn, protocol.TypeMeta, protocol.MaxControlPayload, &meta)
 				rs.TransferID = meta.TransferID
 				_ = protocol.WriteJSON(conn, protocol.TypeResumeState, rs)
 				_, _, _ = protocol.ReadFrame(conn, 1<<20)

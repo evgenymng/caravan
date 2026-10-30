@@ -23,9 +23,6 @@ type Hello struct {
 	Version int `json:"version"`
 }
 
-// Meta is the META payload: the file description from transfer.Meta.
-type Meta = transfer.Meta
-
 // ResumeState is the receiver's answer to META: which chunks it has and the stored chunk size.
 type ResumeState struct {
 	TransferID     string          `json:"transferId"`

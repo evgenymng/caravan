@@ -45,7 +45,7 @@ func newStatusCmd() *cobra.Command {
 }
 
 func printSummary(w io.Writer, t receiver.Summary) {
-	done := min(t.ReceivedChunks*uint64(t.ChunkSize), t.FileSize)
+	done := t.ChunksLen(t.ReceivedChunks)
 	pct := 100 * float64(t.ReceivedChunks) / float64(max(t.Chunks, 1))
 	_, _ = fmt.Fprintf(w, "transfer: %s\nfile: %s\nstatus: %s\n", t.TransferID, t.FileName, t.Status)
 	_, _ = fmt.Fprintf(w, "received: %d / %d chunks\nprogress: %.1f %%\n", t.ReceivedChunks, t.Chunks, pct)

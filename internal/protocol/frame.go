@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 )
 
 // Version is the protocol version exchanged in HELLO.
@@ -28,7 +29,14 @@ const (
 	TypeError
 )
 
-const frameHeaderLen = 5
+const (
+	// MaxControlPayload caps JSON frames, read before any per-transfer limit applies
+	MaxControlPayload = 64 << 10
+	// WriteTimeout bounds writing one frame, up to a 64 MB chunk over slow Wi-Fi
+	WriteTimeout = 30 * time.Second
+
+	frameHeaderLen = 5
+)
 
 var (
 	ErrFrameTooLarge  = errors.New("frame too large")

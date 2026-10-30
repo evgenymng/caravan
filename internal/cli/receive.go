@@ -42,7 +42,7 @@ func newReceiveCmd() *cobra.Command {
 			cfg.OnChunk = func(m transfer.Meta, received uint64) {
 				mu.Lock()
 				defer mu.Unlock()
-				done := min(received*uint64(m.ChunkSize), m.FileSize)
+				done := m.ChunksLen(received)
 				bar, ok := bars[m.TransferID]
 				if !ok {
 					bar = progress.New(

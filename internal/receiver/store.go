@@ -35,9 +35,9 @@ type Store struct {
 // Summary is what `status` shows for a stored transfer.
 type Summary struct {
 	transfer.Meta
-	Status         transfer.Status `json:"status"`
-	ReceivedChunks uint64          `json:"receivedChunks"`
-	UpdatedAt      time.Time       `json:"updatedAt"`
+	Status         transfer.Status
+	ReceivedChunks uint64
+	UpdatedAt      time.Time
 }
 
 // Transfer is an exclusively held, in-progress transfer.

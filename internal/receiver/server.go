@@ -16,12 +16,9 @@ import (
 )
 
 const (
-	writeTimeout    = 30 * time.Second
 	shutdownTimeout = 10 * time.Second
 	// frameSlack covers the chunk header on top of the chunk data
 	frameSlack = 64
-	// controlPayload caps JSON frames, read before any per-transfer limit applies
-	controlPayload = 64 << 10
 )
 
 // Config holds receiver settings.
@@ -167,7 +164,7 @@ func (c *session) run() error {
 		return err
 	}
 
-	var meta protocol.Meta
+	var meta transfer.Meta
 	if err := c.expect(protocol.TypeMeta, &meta); err != nil {
 		return err
 	}
@@ -269,11 +266,11 @@ func (c *session) handleChunk(tr *Transfer, payload []byte) error {
 
 func (c *session) expect(t protocol.Type, v any) error {
 	_ = c.conn.SetReadDeadline(time.Now().Add(c.cfg.ReadTimeout))
-	return protocol.Expect(c.conn, t, controlPayload, v)
+	return protocol.Expect(c.conn, t, protocol.MaxControlPayload, v)
 }
 
 func (c *session) write(t protocol.Type, v any) error {
-	_ = c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+	_ = c.conn.SetWriteDeadline(time.Now().Add(protocol.WriteTimeout))
 	return protocol.WriteJSON(c.conn, t, v)
 }
 
