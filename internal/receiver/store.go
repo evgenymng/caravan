@@ -272,7 +272,10 @@ func (t *Transfer) load(md metaOnDisk, stored bool) error {
 	if err == nil {
 		return nil
 	}
-	slog.Warn("stored state unusable, starting over", "transfer_id", t.meta.TransferID, "error", err)
+	// a completed transfer whose result was deleted keeps no bitmap: nothing to warn about
+	if md.Status != transfer.StatusCompleted {
+		slog.Warn("stored state unusable, starting over", "transfer_id", t.meta.TransferID, "error", err)
+	}
 	return t.create()
 }
 

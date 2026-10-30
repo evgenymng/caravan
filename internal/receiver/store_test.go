@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"log/slog"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -242,10 +243,14 @@ func TestStore_CompletedIsIdempotent(t *testing.T) {
 	require.Len(t, list, 1)
 	require.Equal(t, transfer.StatusCompleted, list[0].Status)
 
-	// the user deleted the result: start over
+	// the user deleted the result: start over, without a warning
+	var logs bytes.Buffer
+	defer slog.SetDefault(slog.Default())
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	require.NoError(t, os.Remove(path))
 	fresh, err := s.Acquire(meta)
 	require.NoError(t, err)
+	require.Empty(t, logs.String())
 	require.Equal(t, transfer.StatusTransferring, fresh.Status())
 	require.Nil(t, fresh.Received())
 	fresh.Release(transfer.StatusInterrupted)
