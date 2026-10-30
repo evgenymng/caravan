@@ -27,6 +27,11 @@ func TestFrame_TooLarge(t *testing.T) {
 	require.ErrorIs(t, err, ErrFrameTooLarge)
 }
 
+func TestFrame_Empty(t *testing.T) {
+	_, _, err := ReadFrame(bytes.NewReader(make([]byte, frameHeaderLen)), 64)
+	require.ErrorIs(t, err, ErrEmptyFrame)
+}
+
 func TestFrame_Truncated(t *testing.T) {
 	var buf bytes.Buffer
 	require.NoError(t, WriteFrame(&buf, TypeAck, []byte("hello")))

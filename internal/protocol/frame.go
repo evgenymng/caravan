@@ -32,6 +32,7 @@ const frameHeaderLen = 5
 
 var (
 	ErrFrameTooLarge  = errors.New("frame too large")
+	ErrEmptyFrame     = errors.New("empty frame")
 	ErrUnexpectedType = errors.New("unexpected message type")
 )
 
@@ -49,7 +50,10 @@ func ReadFrame(r io.Reader, maxPayload uint32) (Type, []byte, error) {
 		return 0, nil, err
 	}
 	n := binary.BigEndian.Uint32(hdr[:])
-	if n == 0 || n-1 > maxPayload {
+	if n == 0 {
+		return 0, nil, ErrEmptyFrame
+	}
+	if n-1 > maxPayload {
 		return 0, nil, fmt.Errorf("%w: %d bytes", ErrFrameTooLarge, n)
 	}
 	payload := make([]byte, n-1)
