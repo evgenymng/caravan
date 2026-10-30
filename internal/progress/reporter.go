@@ -12,17 +12,23 @@ type Reporter struct {
 	out      io.Writer
 	label    string
 	total    uint64
+	base     uint64
 	tty      bool
 	interval time.Duration
 	start    time.Time
 	last     time.Time
 }
 
-// New returns a reporter for total bytes that draws 5×/s on a TTY and every 2 s otherwise.
-func New(out io.Writer, label string, total uint64, tty bool) *Reporter {
+// New returns a reporter that counts speed from done bytes on; it draws 5×/s on a TTY, every 2 s otherwise.
+func New(out io.Writer, label string, total, done uint64, tty bool) *Reporter {
 	r := &Reporter{
-		out: out, label: label, total: total, tty: tty,
-		interval: 2 * time.Second, start: time.Now(),
+		out:      out,
+		label:    label,
+		total:    total,
+		base:     done,
+		tty:      tty,
+		interval: 2 * time.Second,
+		start:    time.Now(),
 	}
 	if tty {
 		r.interval = 200 * time.Millisecond
@@ -60,8 +66,8 @@ func FormatBytes(n uint64) string {
 func (r *Reporter) draw(done, chunksDone, chunksTotal uint64, final bool) {
 	elapsed := time.Since(r.start).Seconds()
 	var speed float64
-	if elapsed >= 1 { // too noisy before a full second of samples
-		speed = float64(done) / elapsed
+	if elapsed >= 1 && done > r.base { // too noisy before a full second of samples
+		speed = float64(done-r.base) / elapsed
 	}
 	var eta time.Duration
 	if speed > 0 && done < r.total {

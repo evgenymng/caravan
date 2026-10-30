@@ -32,7 +32,13 @@ func newSendCmd() *cobra.Command {
 			barFor := func(st sender.Stats) *progress.Reporter {
 				if bar == nil {
 					m := st.Meta
-					bar = progress.New(cmd.OutOrStdout(), "send "+m.FileName, m.FileSize, isTTY(os.Stdout))
+					bar = progress.New(
+						cmd.OutOrStdout(),
+						"send "+m.FileName,
+						m.FileSize,
+						st.BytesAcked,
+						isTTY(os.Stdout),
+					)
 				}
 				return bar
 			}

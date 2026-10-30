@@ -17,7 +17,7 @@ func TestRender(t *testing.T) {
 
 func TestReporter_ThrottlesAndFinishes(t *testing.T) {
 	var out bytes.Buffer
-	r := New(&out, "send", 100, false)
+	r := New(&out, "send", 100, 0, false)
 	r.interval = time.Hour
 	r.Update(10, 1, 10)
 	r.Update(20, 2, 10)
@@ -29,12 +29,20 @@ func TestReporter_ThrottlesAndFinishes(t *testing.T) {
 
 func TestReporter_TTYUsesCarriageReturn(t *testing.T) {
 	var out bytes.Buffer
-	r := New(&out, "send", 100, true)
+	r := New(&out, "send", 100, 0, true)
 	r.Update(10, 1, 10)
 	require.True(t, strings.HasPrefix(out.String(), "\r"))
 	require.False(t, strings.HasSuffix(out.String(), "\n"))
 	r.Finish(100, 10)
 	require.True(t, strings.HasSuffix(out.String(), "\n"))
+}
+
+func TestReporter_SpeedSkipsResumedBytes(t *testing.T) {
+	var out bytes.Buffer
+	r := New(&out, "recv", 100<<20, 90<<20, false)
+	r.start = time.Now().Add(-2 * time.Second)
+	r.Update(92<<20, 92, 100)
+	require.Contains(t, out.String(), "ETA 8s", "1 MB/s over this run, not 46 MB/s counting resumed bytes")
 }
 
 func TestFormatBytes(t *testing.T) {
