@@ -174,7 +174,7 @@ func (c *session) run() error {
 	if err := meta.Validate(c.cfg.MaxChunkSize); err != nil {
 		return c.fail(protocol.CodeInvalidMeta, err.Error(), nil)
 	}
-	tr, err := c.store.Acquire(meta, func() { _ = c.conn.Close() })
+	tr, err := c.store.Acquire(meta)
 	if err != nil {
 		return c.fail(codeFor(err), err.Error(), nil)
 	}

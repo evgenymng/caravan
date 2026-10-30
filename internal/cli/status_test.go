@@ -19,7 +19,7 @@ func TestStatus_PrintsStoredTransfer(t *testing.T) {
 		hex.EncodeToString(sum[:]))
 	store, err := receiver.NewStore(dir, false)
 	require.NoError(t, err)
-	tr, err := store.Acquire(meta, func() {})
+	tr, err := store.Acquire(meta)
 	require.NoError(t, err)
 	_, err = tr.WriteChunk(0, data[:transfer.MinChunkSize])
 	require.NoError(t, err)

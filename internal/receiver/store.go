@@ -23,9 +23,8 @@ const (
 // Store owns the receiver's on-disk state: one directory per transfer
 // under <dir>/.caravan with metadata, a chunk bitmap and the .part file.
 type Store struct {
-	dir         string
-	fsync       bool
-	preemptWait time.Duration
+	dir   string
+	fsync bool
 
 	mu     sync.Mutex
 	active map[string]*Transfer
@@ -47,8 +46,6 @@ type Transfer struct {
 	status   transfer.Status
 	bitmap   *transfer.Bitmap
 	part     *os.File
-	preempt  func()
-	done     chan struct{}
 	released bool
 	// finalPath is set once the file has been moved into place.
 	finalPath string
@@ -66,12 +63,7 @@ func NewStore(dir string, fsync bool) (*Store, error) {
 	if err := os.MkdirAll(filepath.Join(dir, stateDirName), 0o750); err != nil {
 		return nil, fmt.Errorf("create state dir: %w", err)
 	}
-	return &Store{
-		dir:         dir,
-		fsync:       fsync,
-		preemptWait: 30 * time.Second,
-		active:      map[string]*Transfer{},
-	}, nil
+	return &Store{dir: dir, fsync: fsync, active: map[string]*Transfer{}}, nil
 }
 
 // Scan lists stored transfers without touching them.
@@ -124,40 +116,27 @@ func (s *Store) Recover() error {
 
 // Acquire opens the transfer described by meta for exclusive use. An
 // existing state directory is resumed (its chunk size wins over meta's);
-// a session already holding the same id is preempted via its closer.
-func (s *Store) Acquire(meta transfer.Meta, closer func()) (*Transfer, error) {
+// a transfer another session holds is busy until that session releases it.
+func (s *Store) Acquire(meta transfer.Meta) (*Transfer, error) {
 	if err := meta.Validate(1 << 31); err != nil {
 		return nil, err
 	}
 	s.mu.Lock()
-	old := s.active[meta.TransferID]
-	s.mu.Unlock()
-	if old != nil {
-		old.preempt()
-		select {
-		case <-old.done:
-		case <-time.After(s.preemptWait):
-			return nil, ErrBusy
-		}
-	}
-
-	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, again := s.active[meta.TransferID]; again {
+	if _, busy := s.active[meta.TransferID]; busy {
 		return nil, ErrBusy
 	}
 	t, err := s.open(meta)
 	if err != nil {
 		return nil, err
 	}
-	t.preempt = closer
 	s.active[meta.TransferID] = t
 	return t, nil
 }
 
 func (s *Store) open(meta transfer.Meta) (*Transfer, error) {
 	dir := filepath.Join(s.dir, stateDirName, meta.TransferID)
-	t := &Transfer{store: s, dir: dir, meta: meta, done: make(chan struct{})}
+	t := &Transfer{store: s, dir: dir, meta: meta}
 
 	md, err := readMeta(dir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -273,8 +252,13 @@ func (t *Transfer) Finalize() (string, error) {
 	if err := t.part.Close(); err != nil {
 		return "", err
 	}
+	// Under the store lock so two transfers with the same name cannot
+	// pick the same free path.
+	t.store.mu.Lock()
 	final := uniquePath(filepath.Join(t.store.dir, t.meta.FileName))
-	if err := os.Rename(t.partPath(), final); err != nil {
+	err = os.Rename(t.partPath(), final)
+	t.store.mu.Unlock()
+	if err != nil {
 		return "", fmt.Errorf("move finished file: %w", err)
 	}
 	t.finalPath = final
@@ -371,7 +355,6 @@ func (t *Transfer) unregister() {
 		delete(t.store.active, t.meta.TransferID)
 	}
 	t.store.mu.Unlock()
-	close(t.done)
 }
 
 func (t *Transfer) partPath() string {

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/evgenymng/caravan/internal/transfer"
 	"github.com/stretchr/testify/require"
@@ -43,7 +42,7 @@ func TestStore_FullTransfer(t *testing.T) {
 	s := newStore(t, dir)
 	data, meta := testFile(t, 2*testChunk+100)
 
-	tr, err := s.Acquire(meta, func() {})
+	tr, err := s.Acquire(meta)
 	require.NoError(t, err)
 	require.Equal(t, transfer.StatusTransferring, tr.Status())
 	require.Equal(t, uint64(3), tr.Meta().Chunks)
@@ -79,7 +78,7 @@ func TestStore_FullTransfer(t *testing.T) {
 func TestStore_WriteChunkErrors(t *testing.T) {
 	s := newStore(t, t.TempDir())
 	data, meta := testFile(t, testChunk+1)
-	tr, err := s.Acquire(meta, func() {})
+	tr, err := s.Acquire(meta)
 	require.NoError(t, err)
 	defer tr.Release(transfer.StatusInterrupted)
 
@@ -95,7 +94,7 @@ func TestStore_FinalizeMismatchResets(t *testing.T) {
 	dir := t.TempDir()
 	s := newStore(t, dir)
 	data, meta := testFile(t, testChunk)
-	tr, err := s.Acquire(meta, func() {})
+	tr, err := s.Acquire(meta)
 	require.NoError(t, err)
 	wrong := bytes.Clone(data)
 	wrong[0] ^= 0xff
@@ -111,7 +110,7 @@ func TestStore_FinalizeMismatchResets(t *testing.T) {
 	require.Equal(t, transfer.StatusFailed, list[0].Status)
 
 	// Next attempt starts from scratch.
-	tr, err = s.Acquire(meta, func() {})
+	tr, err = s.Acquire(meta)
 	require.NoError(t, err)
 	require.Equal(t, transfer.StatusTransferring, tr.Status())
 	tr.Release(transfer.StatusInterrupted)
@@ -121,7 +120,7 @@ func TestStore_ResumeAfterRestart(t *testing.T) {
 	dir := t.TempDir()
 	data, meta := testFile(t, 3*testChunk)
 	s := newStore(t, dir)
-	tr, err := s.Acquire(meta, func() {})
+	tr, err := s.Acquire(meta)
 	require.NoError(t, err)
 	_, err = tr.WriteChunk(0, chunk(data, meta, 0))
 	require.NoError(t, err)
@@ -140,7 +139,7 @@ func TestStore_ResumeAfterRestart(t *testing.T) {
 	other := meta
 	other.ChunkSize = 2 * testChunk
 	other.Chunks = 2
-	tr2, err := s2.Acquire(other, func() {})
+	tr2, err := s2.Acquire(other)
 	require.NoError(t, err)
 	require.Equal(t, uint32(testChunk), tr2.Meta().ChunkSize)
 	require.Equal(t, [][2]uint64{{0, 0}, {2, 2}}, tr2.Received())
@@ -157,37 +156,23 @@ func TestStore_InvalidMeta(t *testing.T) {
 	s := newStore(t, t.TempDir())
 	_, meta := testFile(t, testChunk)
 	meta.Chunks = 9
-	_, err := s.Acquire(meta, func() {})
+	_, err := s.Acquire(meta)
 	require.ErrorIs(t, err, transfer.ErrInvalidMeta)
 }
 
-func TestStore_PreemptsActiveSession(t *testing.T) {
+func TestStore_BusyWhileActive(t *testing.T) {
 	s := newStore(t, t.TempDir())
 	_, meta := testFile(t, testChunk)
-	preempted := make(chan struct{})
-	tr, err := s.Acquire(meta, func() { close(preempted) })
+	tr, err := s.Acquire(meta)
 	require.NoError(t, err)
 
-	go func() {
-		<-preempted
-		time.Sleep(20 * time.Millisecond)
-		tr.Release(transfer.StatusInterrupted)
-	}()
-	tr2, err := s.Acquire(meta, func() {})
-	require.NoError(t, err)
-	tr2.Release(transfer.StatusInterrupted)
-}
-
-func TestStore_PreemptTimeout(t *testing.T) {
-	s := newStore(t, t.TempDir())
-	s.preemptWait = 50 * time.Millisecond
-	_, meta := testFile(t, testChunk)
-	tr, err := s.Acquire(meta, func() {})
-	require.NoError(t, err)
-	defer tr.Release(transfer.StatusInterrupted)
-
-	_, err = s.Acquire(meta, func() {})
+	_, err = s.Acquire(meta)
 	require.ErrorIs(t, err, ErrBusy)
+
+	tr.Release(transfer.StatusInterrupted)
+	tr, err = s.Acquire(meta)
+	require.NoError(t, err)
+	tr.Release(transfer.StatusInterrupted)
 }
 
 func TestStore_NameCollision(t *testing.T) {
@@ -195,7 +180,7 @@ func TestStore_NameCollision(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "f.bin"), nil, 0o600))
 	s := newStore(t, dir)
 	data, meta := testFile(t, 10)
-	tr, err := s.Acquire(meta, func() {})
+	tr, err := s.Acquire(meta)
 	require.NoError(t, err)
 	_, err = tr.WriteChunk(0, data)
 	require.NoError(t, err)
@@ -208,7 +193,7 @@ func TestStore_ScanIsReadOnlyRecoverMarksInterrupted(t *testing.T) {
 	dir := t.TempDir()
 	s := newStore(t, dir)
 	_, meta := testFile(t, testChunk)
-	tr, err := s.Acquire(meta, func() {})
+	tr, err := s.Acquire(meta)
 	require.NoError(t, err)
 	_ = tr // simulate kill -9: never released
 
@@ -231,7 +216,7 @@ func TestStore_CompletedIsIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	s := newStore(t, dir)
 	data, meta := testFile(t, testChunk+3)
-	tr, err := s.Acquire(meta, func() {})
+	tr, err := s.Acquire(meta)
 	require.NoError(t, err)
 	for i := range meta.Chunks {
 		_, err = tr.WriteChunk(i, chunk(data, meta, i))
@@ -241,7 +226,7 @@ func TestStore_CompletedIsIdempotent(t *testing.T) {
 	require.NoError(t, err)
 
 	// COMPLETE was lost: sender comes back with the same META.
-	again, err := s.Acquire(meta, func() {})
+	again, err := s.Acquire(meta)
 	require.NoError(t, err)
 	require.Equal(t, transfer.StatusCompleted, again.Status())
 	require.Equal(t, [][2]uint64{{0, 1}}, again.Received())
@@ -260,7 +245,7 @@ func TestStore_CompletedIsIdempotent(t *testing.T) {
 
 	// The user deleted the result: start over.
 	require.NoError(t, os.Remove(path))
-	fresh, err := s.Acquire(meta, func() {})
+	fresh, err := s.Acquire(meta)
 	require.NoError(t, err)
 	require.Equal(t, transfer.StatusTransferring, fresh.Status())
 	require.Nil(t, fresh.Received())
