@@ -24,6 +24,10 @@ func TestSanitizeName(t *testing.T) {
 		".hidden":                "hidden",
 		strings.Repeat("x", 300): strings.Repeat("x", 240),
 		strings.Repeat("я", 200): strings.Repeat("я", 120),
+
+		strings.Repeat("x", 300) + ".zip": strings.Repeat("x", 236) + ".zip",
+		strings.Repeat("я", 200) + ".zip": strings.Repeat("я", 118) + ".zip",
+		"a." + strings.Repeat("x", 300):   "a." + strings.Repeat("x", 238),
 	}
 	for in, want := range cases {
 		t.Run(in, func(t *testing.T) {

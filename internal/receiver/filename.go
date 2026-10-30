@@ -22,7 +22,11 @@ func sanitizeName(name, fallback string) string {
 	name = strings.TrimLeft(name, ".")
 
 	if len(name) > maxName {
-		name = strings.ToValidUTF8(name[:maxName], "")
+		ext := filepath.Ext(name)
+		if len(ext) >= maxName {
+			ext = "" // the long part is the extension itself
+		}
+		name = strings.ToValidUTF8(name[:maxName-len(ext)], "") + ext
 	}
 
 	// Base("/") is "/"; anything still holding a separator is not a name.
