@@ -45,6 +45,18 @@ func TestReporter_SpeedSkipsResumedBytes(t *testing.T) {
 	require.Contains(t, out.String(), "ETA 8s", "1 MB/s over this run, not 46 MB/s counting resumed bytes")
 }
 
+func TestReporter_SpeedRestartsAfterIdle(t *testing.T) {
+	var out bytes.Buffer
+	r := New(&out, "recv", 100<<20, 0, false)
+	r.interval = 0
+	r.start = time.Now().Add(-10 * time.Minute)
+	r.seen = r.start
+	r.Update(10<<20, 10, 100)
+	r.start = time.Now().Add(-2 * time.Second)
+	r.Update(12<<20, 12, 100)
+	require.Contains(t, out.String(), "ETA 1m28s", "1 MB/s since the pause, not averaged over it")
+}
+
 func TestFormatBytes(t *testing.T) {
 	require.Equal(t, "512 B", FormatBytes(512))
 	require.Equal(t, "1.0 KB", FormatBytes(1024))

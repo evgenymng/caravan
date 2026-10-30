@@ -7,6 +7,9 @@ import (
 	"time"
 )
 
+// idleReset is the pause after which speed is counted afresh.
+const idleReset = 10 * time.Second
+
 // Reporter prints progress: a redrawn line on a TTY, otherwise a line per interval.
 type Reporter struct {
 	out      io.Writer
@@ -17,10 +20,12 @@ type Reporter struct {
 	interval time.Duration
 	start    time.Time
 	last     time.Time
+	seen     time.Time
 }
 
 // New returns a reporter that counts speed from done bytes on; it draws 5×/s on a TTY, every 2 s otherwise.
 func New(out io.Writer, label string, total, done uint64, tty bool) *Reporter {
+	now := time.Now()
 	r := &Reporter{
 		out:      out,
 		label:    label,
@@ -28,7 +33,8 @@ func New(out io.Writer, label string, total, done uint64, tty bool) *Reporter {
 		base:     done,
 		tty:      tty,
 		interval: 2 * time.Second,
-		start:    time.Now(),
+		start:    now,
+		seen:     now,
 	}
 	if tty {
 		r.interval = 200 * time.Millisecond
@@ -38,7 +44,13 @@ func New(out io.Writer, label string, total, done uint64, tty bool) *Reporter {
 
 // Update reports done bytes and chunks; it draws at most once per interval.
 func (r *Reporter) Update(done, chunksDone, chunksTotal uint64) {
-	if now := time.Now(); now.Sub(r.last) >= r.interval {
+	now := time.Now()
+	if now.Sub(r.seen) > idleReset {
+		// averaging over a long pause would understate speed
+		r.start, r.base = now, done
+	}
+	r.seen = now
+	if now.Sub(r.last) >= r.interval {
 		r.last = now
 		r.draw(done, chunksDone, chunksTotal, false)
 	}
