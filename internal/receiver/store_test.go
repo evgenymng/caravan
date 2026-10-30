@@ -192,9 +192,8 @@ func TestStore_ScanIsReadOnlyRecoverMarksInterrupted(t *testing.T) {
 	dir := t.TempDir()
 	s := newStore(t, dir)
 	_, meta := testFile(t, testChunk)
-	tr, err := s.Acquire(meta)
+	_, err := s.Acquire(meta) // simulate kill -9: never released
 	require.NoError(t, err)
-	_ = tr // simulate kill -9: never released
 
 	other := newStore(t, dir) // e.g. `caravan status` while receiver runs
 	list, err := Scan(dir)
@@ -266,7 +265,8 @@ func TestStore_CrashBeforeRenameResumes(t *testing.T) {
 	}
 	state := filepath.Join(dir, ".caravan", meta.TransferID)
 	require.NoError(t, s.writeMeta(state, metaOnDisk{
-		Meta: meta, Status: transfer.StatusCompleted,
+		Meta:      meta,
+		Status:    transfer.StatusCompleted,
 		FinalPath: filepath.Join(dir, "f.bin"),
 	}))
 	_ = tr.part.Close() // simulated crash: no Release, new process below

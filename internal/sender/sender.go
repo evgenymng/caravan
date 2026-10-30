@@ -38,7 +38,7 @@ type Options struct {
 	FinalizeTimeout time.Duration
 	// DropAfterChunk closes the connection once right after sending that chunk, -1 disables
 	DropAfterChunk int64
-	// OnProgress, if set, is called after every acknowledged chunk.
+	// OnProgress, if set, is called after every acknowledged chunk
 	OnProgress func(Stats)
 }
 

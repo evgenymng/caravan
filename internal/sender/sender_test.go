@@ -249,12 +249,14 @@ func TestSender_RejectsBogusResumeState(t *testing.T) {
 	path, _ := tempFile(t, 2*chunkSize)
 	cases := map[string]protocol.ResumeState{
 		"range past end": {
-			ChunkSize: chunkSize, Chunks: 2,
-			Received: [][2]uint64{{0, 5}},
+			ChunkSize: chunkSize,
+			Chunks:    2,
+			Received:  [][2]uint64{{0, 5}},
 		},
 		"inverted range": {
-			ChunkSize: chunkSize, Chunks: 2,
-			Received: [][2]uint64{{1, 0}},
+			ChunkSize: chunkSize,
+			Chunks:    2,
+			Received:  [][2]uint64{{1, 0}},
 		},
 		"chunk count mismatch": {ChunkSize: chunkSize, Chunks: 7},
 		"tiny chunk size":      {ChunkSize: 1, Chunks: 2 * chunkSize},

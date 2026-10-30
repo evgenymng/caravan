@@ -68,7 +68,7 @@ func TestDisconnectAt40Percent(t *testing.T) {
 	require.Equal(t, 1, st.Reconnects)
 	require.Equal(t, uint64(20), st.Skipped, "receiver kept chunks 0..19")
 	require.Equal(t, uint64(0), st.Resent, "no acked chunk sent again")
-	// 50, or 51 when chunk 20 hit the socket just before the proxy died.
+	// 50, or 51 when chunk 20 hit the socket just before the proxy died
 	require.LessOrEqual(t, st.Sent, uint64(51))
 	require.Equal(t, sum, fileSum(t, filepath.Join(dir, "f.bin")))
 }
@@ -135,7 +135,8 @@ func TestReceiverRestartResumesFromDisk(t *testing.T) {
 	var first *testReceiver
 	stopOnce := make(chan struct{}, 1)
 	first = startReceiver(t, receiver.Config{
-		Dir: dir, Fsync: true,
+		Dir:   dir,
+		Fsync: true,
 		OnChunk: func(_ transfer.Meta, received uint64) {
 			if received == 30 {
 				select {
@@ -158,8 +159,7 @@ func TestReceiverRestartResumesFromDisk(t *testing.T) {
 
 	<-stopOnce
 	require.NoError(t, first.wait())
-	second := startReceiver(t, receiver.Config{Dir: dir, Addr: addr, Fsync: true})
-	_ = second
+	startReceiver(t, receiver.Config{Dir: dir, Addr: addr, Fsync: true})
 
 	s := <-done
 	st := s.Stats()
