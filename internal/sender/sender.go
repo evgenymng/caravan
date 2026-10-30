@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"sync/atomic"
 	"time"
 
 	"github.com/evgenymng/caravan/internal/protocol"
@@ -68,9 +67,7 @@ type Sender struct {
 	meta    transfer.Meta
 	dropped bool
 	ackedBy *transfer.Bitmap // chunk indexes ACKed in this run
-
-	sent, acked, skipped, done, resent, bytesAcked atomic.Uint64
-	reconnects                                     atomic.Int64
+	stats   Stats
 }
 
 // New returns a Sender; nothing is opened until Run.
@@ -79,16 +76,9 @@ func New(opts Options, log *slog.Logger) *Sender {
 }
 
 func (s *Sender) Stats() Stats {
-	return Stats{
-		Meta:       s.meta,
-		Sent:       s.sent.Load(),
-		Acked:      s.acked.Load(),
-		Skipped:    s.skipped.Load(),
-		Done:       s.done.Load(),
-		Resent:     s.resent.Load(),
-		BytesAcked: s.bytesAcked.Load(),
-		Reconnects: int(s.reconnects.Load()),
-	}
+	st := s.stats
+	st.Meta = s.meta
+	return st
 }
 
 // Run transfers the file, reconnecting on network errors, until it is complete or a fatal error occurs.
@@ -106,12 +96,12 @@ func (s *Sender) Run(ctx context.Context) error {
 			}
 			delay = min(2*delay, maxBackoff)
 		}
-		ackedBefore := s.acked.Load()
+		ackedBefore := s.stats.Acked
 		err := s.attempt(ctx)
 		if err == nil {
 			return nil
 		}
-		if s.acked.Load() > ackedBefore {
+		if s.stats.Acked > ackedBefore {
 			// progress means the link works: fresh retry budget and short delay
 			attempt, delay = 0, s.opts.RetryDelay
 		}
@@ -166,7 +156,7 @@ func (s *Sender) close() {
 
 // waitRetry sleeps before a reconnect and refuses to go on if the source file changed meanwhile.
 func (s *Sender) waitRetry(ctx context.Context, attempt int, delay time.Duration) error {
-	s.reconnects.Add(1)
+	s.stats.Reconnects++
 	s.log.Info("reconnecting", "attempt", attempt, "delay", delay)
 	select {
 	case <-time.After(delay):
@@ -257,9 +247,7 @@ func (s *Sender) applyResumeState(rs protocol.ResumeState) *transfer.Bitmap {
 	if s.ackedBy == nil || s.ackedBy.Len() != s.meta.Chunks {
 		s.ackedBy = transfer.NewBitmap(s.meta.Chunks)
 	}
-	s.skipped.Store(have.Count())
-	s.done.Store(have.Count())
-	s.bytesAcked.Store(bytes)
+	s.stats.Skipped, s.stats.Done, s.stats.BytesAcked = have.Count(), have.Count(), bytes
 	s.log.Info(
 		"resume state",
 		"status", rs.Status,
@@ -313,9 +301,9 @@ func (s *Sender) sendChunk(conn net.Conn, i uint64, buf []byte) error {
 		if err := protocol.WriteChunk(conn, i, data); err != nil {
 			return err
 		}
-		s.sent.Add(1)
+		s.stats.Sent++
 		if s.ackedBy.Has(i) {
-			s.resent.Add(1)
+			s.stats.Resent++
 			s.log.Error("protocol bug: resending an acknowledged chunk", "chunk", i)
 		}
 		s.log.Debug("chunk sent", "chunk", i, "bytes", len(data))
@@ -340,10 +328,10 @@ func (s *Sender) sendChunk(conn net.Conn, i uint64, buf []byte) error {
 		if ack.Index != i {
 			return fmt.Errorf("ack for chunk %d, want %d", ack.Index, i)
 		}
-		s.acked.Add(1)
-		s.done.Add(1)
+		s.stats.Acked++
+		s.stats.Done++
+		s.stats.BytesAcked += uint64(len(data))
 		s.ackedBy.Set(i)
-		s.bytesAcked.Add(uint64(len(data)))
 		s.log.Debug("chunk acked", "chunk", i)
 		if s.opts.OnProgress != nil {
 			s.opts.OnProgress(s.Stats())
