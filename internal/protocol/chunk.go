@@ -1,12 +1,10 @@
 package protocol
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"io"
-	"math"
-
-	"github.com/evgenymng/caravan/internal/transfer"
 )
 
 // chunkHeaderLen is uint64 index + uint32 size + 32-byte SHA-256.
@@ -20,18 +18,15 @@ type Chunk struct {
 }
 
 // Verify recomputes the data checksum and compares it with the header.
-func (c Chunk) Verify() bool { return transfer.HashBytes(c.Data) == c.Sum }
+func (c Chunk) Verify() bool { return sha256.Sum256(c.Data) == c.Sum }
 
 // WriteChunk writes chunk index with data as a CHUNK frame.
 func WriteChunk(w io.Writer, index uint64, data []byte) error {
-	if len(data) > math.MaxUint32 {
-		return ErrFrameTooLarge
-	}
-	size := uint32(len(data)) //nolint:gosec // guarded above
+	size := uint32(len(data)) //nolint:gosec // writeFrame rejects frames over 2 GB
 	var hdr [chunkHeaderLen]byte
 	binary.BigEndian.PutUint64(hdr[:8], index)
 	binary.BigEndian.PutUint32(hdr[8:12], size)
-	sum := transfer.HashBytes(data)
+	sum := sha256.Sum256(data)
 	copy(hdr[12:], sum[:])
 	return writeFrame(w, TypeChunk, hdr[:], data)
 }

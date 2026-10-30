@@ -4,9 +4,7 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -24,18 +22,16 @@ func NewRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			lvl, err := parseLevel(logLevel)
-			if err != nil {
+			var lvl slog.Level
+			if err := lvl.UnmarshalText([]byte(logLevel)); err != nil {
 				return err
 			}
-			log := slog.New(slog.NewTextHandler(
-				cmd.ErrOrStderr(), &slog.HandlerOptions{Level: lvl}))
+			log := slog.New(slog.NewTextHandler(cmd.ErrOrStderr(), &slog.HandlerOptions{Level: lvl}))
 			slog.SetDefault(log)
 			return nil
 		},
 	}
-	root.PersistentFlags().StringVar(
-		&logLevel, "log-level", "info", "log level: debug|info|warn|error")
+	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level: debug|info|warn|error")
 
 	root.AddCommand(newSendCmd(), newReceiveCmd(), newStatusCmd())
 	return root
@@ -44,19 +40,4 @@ func NewRootCmd() *cobra.Command {
 // Execute runs the root command with ctx and returns its error.
 func Execute(ctx context.Context) error {
 	return NewRootCmd().ExecuteContext(ctx)
-}
-
-func parseLevel(s string) (slog.Level, error) {
-	switch strings.ToLower(s) {
-	case "debug":
-		return slog.LevelDebug, nil
-	case "info":
-		return slog.LevelInfo, nil
-	case "warn", "warning":
-		return slog.LevelWarn, nil
-	case "error":
-		return slog.LevelError, nil
-	default:
-		return 0, fmt.Errorf("unknown log level %q", s)
-	}
 }

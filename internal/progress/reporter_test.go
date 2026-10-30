@@ -40,3 +40,10 @@ func TestReporter_TTYUsesCarriageReturn(t *testing.T) {
 	r.Finish(100, 10)
 	require.True(t, strings.HasSuffix(out.String(), "\n"))
 }
+
+func TestFormatBytes(t *testing.T) {
+	require.Equal(t, "512 B", FormatBytes(512))
+	require.Equal(t, "1.0 KB", FormatBytes(1024))
+	require.Equal(t, "337.0 MB", FormatBytes(337<<20))
+	require.Equal(t, "1.5 GB", FormatBytes(3<<29))
+}

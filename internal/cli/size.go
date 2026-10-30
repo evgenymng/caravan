@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-
-	"github.com/evgenymng/caravan/internal/progress"
 )
 
 var sizeUnits = map[string]uint64{
@@ -32,5 +30,3 @@ func parseSize(s string) (uint64, error) {
 	}
 	return n * mult, nil
 }
-
-func formatBytes(n uint64) string { return progress.FormatBytes(n) }

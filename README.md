@@ -115,7 +115,7 @@ bitmap записывается атомарно (tmp + rename + `fsync` кат�
 Имя файла из сети не используется как путь: берётся только базовое имя, удаляются
 управляющие символы и ведущие точки, пустое имя заменяется на transfer ID.
 
-Статусы: `created → transferring → interrupted | completed | failed`
+Статусы: `transferring → interrupted | completed | failed`
 (`interrupted → transferring` при переподключении). При старте получатель сканирует
 `.caravan/`, переводит «зависшие» `transferring` в `interrupted` и пишет их в лог.
 `caravan status` только читает: пока получатель не перезапущен, убитая передача

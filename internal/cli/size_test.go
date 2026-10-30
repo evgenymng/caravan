@@ -26,10 +26,3 @@ func TestParseSize(t *testing.T) {
 		require.Error(t, err, in)
 	}
 }
-
-func TestFormatBytes(t *testing.T) {
-	require.Equal(t, "512 B", formatBytes(512))
-	require.Equal(t, "1.0 KB", formatBytes(1024))
-	require.Equal(t, "337.0 MB", formatBytes(337<<20))
-	require.Equal(t, "1.5 GB", formatBytes(3<<29))
-}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/evgenymng/caravan/internal/progress"
 	"github.com/evgenymng/caravan/internal/receiver"
 )
 
@@ -51,6 +52,6 @@ func printSummary(w io.Writer, t receiver.Summary) {
 		t.TransferID, t.FileName, t.Status,
 		t.ReceivedChunks, t.Chunks,
 		100*float64(t.ReceivedChunks)/float64(max(t.Chunks, 1)),
-		formatBytes(done), formatBytes(t.FileSize),
+		progress.FormatBytes(done), progress.FormatBytes(t.FileSize),
 		t.UpdatedAt.Format("2006-01-02 15:04:05"))
 }

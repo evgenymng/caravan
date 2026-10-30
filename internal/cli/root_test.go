@@ -19,29 +19,10 @@ func TestRoot_ListsSubcommands(t *testing.T) {
 	}
 }
 
-func TestParseLevel(t *testing.T) {
-	cases := []struct {
-		in   string
-		ok   bool
-		want string
-	}{
-		{"debug", true, "DEBUG"},
-		{"INFO", true, "INFO"},
-		{"warn", true, "WARN"},
-		{"error", true, "ERROR"},
-		{"loud", false, ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.in, func(t *testing.T) {
-			lvl, err := parseLevel(tc.in)
-			if !tc.ok {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, tc.want, lvl.String())
-		})
-	}
+func TestRoot_RejectsUnknownLogLevel(t *testing.T) {
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"--log-level", "loud", "status", "--dir", t.TempDir()})
+	require.ErrorContains(t, cmd.Execute(), "loud")
 }
 
 func TestSend_RejectsTinyChunkSize(t *testing.T) {

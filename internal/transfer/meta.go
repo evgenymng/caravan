@@ -21,7 +21,6 @@ const (
 
 // Status values form the transfer lifecycle on the receiver.
 const (
-	StatusCreated      Status = "created"
 	StatusTransferring Status = "transferring"
 	StatusInterrupted  Status = "interrupted"
 	StatusCompleted    Status = "completed"
@@ -112,6 +111,3 @@ func HashReader(ctx context.Context, r io.Reader) (string, error) {
 		}
 	}
 }
-
-// HashBytes returns the SHA-256 of b.
-func HashBytes(b []byte) [32]byte { return sha256.Sum256(b) }

@@ -75,14 +75,3 @@ func (e *Error) Fatal() bool {
 	}
 	return false
 }
-
-// WriteError sends an ERROR frame.
-func WriteError(w interface{ Write([]byte) (int, error) },
-	code, msg string, index *uint64,
-) error {
-	return WriteJSON(
-		w,
-		TypeError,
-		Error{Code: code, Message: msg, Index: index},
-	)
-}

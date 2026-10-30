@@ -2,10 +2,10 @@ package protocol
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"io"
 	"testing"
 
-	"github.com/evgenymng/caravan/internal/transfer"
 	"github.com/stretchr/testify/require"
 )
 
@@ -80,7 +80,7 @@ func TestChunk_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(42), c.Index)
 	require.Equal(t, data, c.Data)
-	require.Equal(t, transfer.HashBytes(data), c.Sum)
+	require.Equal(t, sha256.Sum256(data), c.Sum)
 	require.True(t, c.Verify())
 
 	c.Data[0] ^= 0xff

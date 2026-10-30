@@ -79,9 +79,6 @@ func NewServer(cfg Config, log *slog.Logger) (*Server, error) {
 // Addr returns the bound listener address.
 func (s *Server) Addr() net.Addr { return s.ln.Addr() }
 
-// Store exposes the state store (for `status`-style queries).
-func (s *Server) Store() *Store { return s.store }
-
 // Serve accepts connections until ctx is cancelled, then closes the
 // listener, aborts active sessions and waits for them to persist state.
 func (s *Server) Serve(ctx context.Context) error {
