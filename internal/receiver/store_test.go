@@ -406,3 +406,21 @@ func TestStore_ScanInterruptedWithoutBitmap(t *testing.T) {
 	require.Equal(t, transfer.StatusInterrupted, list[0].Status)
 	require.Equal(t, uint64(0), list[0].ReceivedChunks)
 }
+
+func TestStore_RelativeDirSurvivesOtherCwd(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	data, meta := testFile(t, testChunk)
+	tr, err := newStore(t, "downloads").Acquire(meta)
+	require.NoError(t, err)
+	_, err = tr.WriteChunk(0, data)
+	require.NoError(t, err)
+	_, err = tr.Finalize(context.Background())
+	require.NoError(t, err)
+
+	t.Chdir(t.TempDir()) // receiver restarted elsewhere with the same dir
+	again, err := newStore(t, filepath.Join(root, "downloads")).Acquire(meta)
+	require.NoError(t, err)
+	require.Equal(t, transfer.StatusCompleted, again.Status())
+	again.Release(transfer.StatusInterrupted)
+}

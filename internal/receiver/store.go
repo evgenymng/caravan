@@ -61,6 +61,10 @@ type metaOnDisk struct {
 
 // NewStore creates dir and its state directory if needed; maxChunkSize limits new transfers only.
 func NewStore(dir string, fsync bool, maxChunkSize uint32) (*Store, error) {
+	dir, err := filepath.Abs(dir) // finalPath must not depend on cwd
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Join(dir, stateDirName), 0o750); err != nil {
 		return nil, fmt.Errorf("create state dir: %w", err)
 	}
