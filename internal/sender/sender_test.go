@@ -82,8 +82,8 @@ func TestSender_FullTransfer(t *testing.T) {
 	require.Equal(t, uint64(0), st.Skipped)
 	require.Equal(t, uint64(len(data)), st.BytesAcked)
 	want := sha256.Sum256(data)
-	require.Equal(t, transfer.NewMeta("src.bin", uint64(len(data)), chunkSize,
-		hex.EncodeToString(want[:])).TransferID, st.Meta.TransferID)
+	id := transfer.NewMeta("src.bin", uint64(len(data)), chunkSize, hex.EncodeToString(want[:])).TransferID
+	require.Equal(t, id, st.Meta.TransferID)
 }
 
 func TestSender_ResumeAfterLostAck(t *testing.T) {
@@ -116,10 +116,7 @@ func TestSender_AdoptsReceiverChunkSize(t *testing.T) {
 	o := opts(path, addr)
 	o.DropAfterChunk = 0
 	o.RetryDelay = time.Hour // only the first attempt runs
-	ctx, cancel := context.WithTimeout(
-		context.Background(),
-		200*time.Millisecond,
-	)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	require.ErrorIs(t, New(o, discard).Run(ctx), context.DeadlineExceeded)
 
@@ -146,8 +143,7 @@ func TestSender_SourceChanged(t *testing.T) {
 }
 
 func TestSender_FatalErrorNoRetry(t *testing.T) {
-	addr := startReceiver(t, t.TempDir(),
-		receiver.Config{MaxChunkSize: chunkSize / 2})
+	addr := startReceiver(t, t.TempDir(), receiver.Config{MaxChunkSize: chunkSize / 2})
 	path, _ := tempFile(t, chunkSize)
 	s := New(opts(path, addr), discard)
 

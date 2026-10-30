@@ -12,9 +12,7 @@ import (
 func TestHashReader(t *testing.T) {
 	sum, err := HashReader(context.Background(), bytes.NewReader([]byte("abc")))
 	require.NoError(t, err)
-	require.Equal(t,
-		"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-		sum)
+	require.Equal(t, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", sum)
 }
 
 func TestTransferID_Deterministic(t *testing.T) {

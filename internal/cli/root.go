@@ -14,11 +14,8 @@ func NewRootCmd() *cobra.Command {
 	var logLevel string
 
 	root := &cobra.Command{
-		Use:   "caravan",
-		Short: "Resumable chunked file transfer over LAN",
-		Long: "caravan transfers a file between two machines in a local " +
-			"network in chunks with per-chunk integrity checks and " +
-			"resume after a connection loss.",
+		Use:           "caravan",
+		Short:         "Resumable chunked file transfer over LAN",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
@@ -37,7 +34,6 @@ func NewRootCmd() *cobra.Command {
 	return root
 }
 
-// Execute runs the root command with ctx and returns its error.
 func Execute(ctx context.Context) error {
 	return NewRootCmd().ExecuteContext(ctx)
 }

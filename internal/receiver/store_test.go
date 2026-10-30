@@ -21,8 +21,7 @@ func testFile(t *testing.T, size int) ([]byte, transfer.Meta) {
 	data := make([]byte, size)
 	rand.New(rand.NewSource(int64(size))).Read(data)
 	sum := sha256.Sum256(data)
-	meta := transfer.NewMeta("f.bin", uint64(size), testChunk,
-		hex.EncodeToString(sum[:]))
+	meta := transfer.NewMeta("f.bin", uint64(size), testChunk, hex.EncodeToString(sum[:]))
 	return data, meta
 }
 
@@ -47,9 +46,7 @@ func TestStore_FullTransfer(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, transfer.StatusTransferring, tr.Status())
 	require.Equal(t, uint64(3), tr.Meta().Chunks)
-	st, err := os.Stat(
-		filepath.Join(dir, ".caravan", meta.TransferID, "f.bin.part"),
-	)
+	st, err := os.Stat(filepath.Join(dir, ".caravan", meta.TransferID, "f.bin.part"))
 	require.NoError(t, err)
 	require.Equal(t, int64(len(data)), st.Size())
 
@@ -110,7 +107,7 @@ func TestStore_FinalizeMismatchResets(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, transfer.StatusFailed, list[0].Status)
 
-	// Next attempt starts from scratch.
+	// next attempt starts from scratch
 	tr, err = s.Acquire(meta)
 	require.NoError(t, err)
 	require.Equal(t, transfer.StatusTransferring, tr.Status())
@@ -136,7 +133,7 @@ func TestStore_ResumeAfterRestart(t *testing.T) {
 	require.Equal(t, transfer.StatusInterrupted, list[0].Status)
 	require.Equal(t, uint64(2), list[0].ReceivedChunks)
 
-	// Sender comes back with a different chunk size: stored one wins.
+	// sender comes back with a different chunk size: stored one wins
 	other := meta
 	other.ChunkSize = 2 * testChunk
 	other.Chunks = 2
@@ -207,8 +204,7 @@ func TestStore_ScanIsReadOnlyRecoverMarksInterrupted(t *testing.T) {
 	list, err = Scan(dir)
 	require.NoError(t, err)
 	require.Equal(t, transfer.StatusInterrupted, list[0].Status)
-	raw, err := os.ReadFile(
-		filepath.Join(dir, ".caravan", meta.TransferID, "metadata.json"))
+	raw, err := os.ReadFile(filepath.Join(dir, ".caravan", meta.TransferID, "metadata.json"))
 	require.NoError(t, err)
 	require.Contains(t, string(raw), `"interrupted"`)
 }
@@ -226,7 +222,7 @@ func TestStore_CompletedIsIdempotent(t *testing.T) {
 	path, err := tr.Finalize(context.Background())
 	require.NoError(t, err)
 
-	// COMPLETE was lost: sender comes back with the same META.
+	// COMPLETE was lost: sender comes back with the same META
 	again, err := s.Acquire(meta)
 	require.NoError(t, err)
 	require.Equal(t, transfer.StatusCompleted, again.Status())
@@ -244,7 +240,7 @@ func TestStore_CompletedIsIdempotent(t *testing.T) {
 	require.Len(t, list, 1)
 	require.Equal(t, transfer.StatusCompleted, list[0].Status)
 
-	// The user deleted the result: start over.
+	// the user deleted the result: start over
 	require.NoError(t, os.Remove(path))
 	fresh, err := s.Acquire(meta)
 	require.NoError(t, err)
@@ -315,6 +311,5 @@ func TestStore_FinalizeCancelledKeepsPart(t *testing.T) {
 	_, err = tr.Finalize(ctx)
 	require.ErrorIs(t, err, context.Canceled)
 	require.Equal(t, transfer.StatusTransferring, tr.Status())
-	require.FileExists(t,
-		filepath.Join(dir, ".caravan", meta.TransferID, "f.bin.part"))
+	require.FileExists(t, filepath.Join(dir, ".caravan", meta.TransferID, "f.bin.part"))
 }

@@ -18,10 +18,9 @@ import (
 const (
 	writeTimeout    = 30 * time.Second
 	shutdownTimeout = 10 * time.Second
-	// frameSlack covers the chunk header on top of the chunk data.
+	// frameSlack covers the chunk header on top of the chunk data
 	frameSlack = 64
-	// controlPayload bounds JSON frames; they are read before any
-	// per-transfer limit applies, so this caps memory per connection.
+	// controlPayload caps JSON frames, read before any per-transfer limit applies
 	controlPayload = 64 << 10
 )
 
@@ -76,11 +75,9 @@ func NewServer(cfg Config, log *slog.Logger) (*Server, error) {
 	}, nil
 }
 
-// Addr returns the bound listener address.
 func (s *Server) Addr() net.Addr { return s.ln.Addr() }
 
-// Serve accepts connections until ctx is cancelled, then closes the
-// listener, aborts active sessions and waits for them to persist state.
+// Serve accepts connections until ctx is cancelled, then waits for sessions to persist state.
 func (s *Server) Serve(ctx context.Context) error {
 	if err := s.store.Recover(); err != nil {
 		s.log.Warn("recover stored transfers", "error", err)
@@ -116,9 +113,14 @@ func (s *Server) logStored() {
 		return
 	}
 	for _, t := range list {
-		s.log.Info("stored transfer", "transfer_id", t.TransferID,
-			"file", t.FileName, "status", t.Status,
-			"received", t.ReceivedChunks, "chunks", t.Chunks)
+		s.log.Info(
+			"stored transfer",
+			"transfer_id", t.TransferID,
+			"file", t.FileName,
+			"status", t.Status,
+			"received", t.ReceivedChunks,
+			"chunks", t.Chunks,
+		)
 	}
 }
 
@@ -151,8 +153,7 @@ func (c *session) run() error {
 		return err
 	}
 	if hello.Version != protocol.Version {
-		return c.fail(protocol.CodeBadVersion,
-			fmt.Sprintf("unsupported version %d", hello.Version), nil)
+		return c.fail(protocol.CodeBadVersion, fmt.Sprintf("unsupported version %d", hello.Version), nil)
 	}
 	select {
 	case c.sem <- struct{}{}:
@@ -178,9 +179,13 @@ func (c *session) run() error {
 	}
 	defer tr.Release(transfer.StatusInterrupted)
 	c.log = c.log.With("transfer_id", tr.Meta().TransferID)
-	c.log.Info("transfer opened", "file", tr.Meta().FileName,
-		"size", tr.Meta().FileSize, "chunks", tr.Meta().Chunks,
-		"received", tr.ReceivedChunks())
+	c.log.Info(
+		"transfer opened",
+		"file", tr.Meta().FileName,
+		"size", tr.Meta().FileSize,
+		"chunks", tr.Meta().Chunks,
+		"received", tr.ReceivedChunks(),
+	)
 
 	if err := c.write(protocol.TypeResumeState, protocol.ResumeState{
 		TransferID:     tr.Meta().TransferID,
@@ -216,21 +221,19 @@ func (c *session) loop(tr *Transfer) error {
 	}
 }
 
-// handleFinalize verifies and completes the transfer; the session ends
-// either way. The whole-file hash is abandoned if the sender goes away.
+// handleFinalize verifies and completes the transfer; the session ends either way.
 func (c *session) handleFinalize(tr *Transfer) error {
 	ctx, cancel := context.WithCancel(c.ctx)
 	defer cancel()
 	_ = c.conn.SetReadDeadline(time.Time{})
-	// The sender is silent until COMPLETE: any read result means it left.
+	// sender is silent until COMPLETE: any read result means it left
 	go func() { _, _ = c.conn.Read(make([]byte, 1)); cancel() }()
 
 	path, err := tr.Finalize(ctx)
 	if err != nil {
 		return c.fail(codeFor(err), err.Error(), nil)
 	}
-	c.log.Info("transfer completed", "path", path,
-		"checksum", tr.Meta().Checksum)
+	c.log.Info("transfer completed", "path", path, "checksum", tr.Meta().Checksum)
 	return c.write(protocol.TypeComplete, protocol.Complete{
 		TransferID: tr.Meta().TransferID, Checksum: tr.Meta().Checksum,
 	})
@@ -249,8 +252,13 @@ func (c *session) handleChunk(tr *Transfer, payload []byte) error {
 	if err != nil {
 		return c.fail(codeFor(err), err.Error(), &ch.Index)
 	}
-	c.log.Debug("chunk stored", "chunk", ch.Index, "bytes", len(ch.Data),
-		"sha256", fmt.Sprintf("%x", ch.Sum[:4]), "duplicate", dup)
+	c.log.Debug(
+		"chunk stored",
+		"chunk", ch.Index,
+		"bytes", len(ch.Data),
+		"sha256", fmt.Sprintf("%x", ch.Sum[:4]),
+		"duplicate", dup,
+	)
 	if c.cfg.OnChunk != nil {
 		c.cfg.OnChunk(tr.Meta(), tr.ReceivedChunks())
 	}

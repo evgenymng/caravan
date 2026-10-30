@@ -1,6 +1,4 @@
-// Package sender implements the sending side: it hashes the file, talks
-// the caravan protocol to a receiver and reconnects until the transfer
-// is complete.
+// Package sender hashes a file and sends it to a receiver, reconnecting until the transfer completes.
 package sender
 
 import (
@@ -41,8 +39,7 @@ type Options struct {
 	DialTimeout     time.Duration
 	AckTimeout      time.Duration
 	FinalizeTimeout time.Duration
-	// DropAfterChunk closes the connection right after sending that chunk
-	// without waiting for its ACK (once). -1 disables. Demo/test only.
+	// DropAfterChunk closes the connection once right after sending that chunk, -1 disables
 	DropAfterChunk int64
 	// OnProgress, if set, is called after every acknowledged chunk.
 	OnProgress func(Stats)
@@ -81,7 +78,6 @@ func New(opts Options, log *slog.Logger) *Sender {
 	return &Sender{opts: opts, log: log}
 }
 
-// Stats returns the current counters.
 func (s *Sender) Stats() Stats {
 	return Stats{
 		Meta:       s.meta,
@@ -95,8 +91,7 @@ func (s *Sender) Stats() Stats {
 	}
 }
 
-// Run transfers the file, reconnecting on network errors, until the
-// receiver confirms the whole file or a fatal error occurs.
+// Run transfers the file, reconnecting on network errors, until it is complete or a fatal error occurs.
 func (s *Sender) Run(ctx context.Context) error {
 	if err := s.open(ctx); err != nil {
 		return err
@@ -117,8 +112,7 @@ func (s *Sender) Run(ctx context.Context) error {
 			return nil
 		}
 		if s.acked.Load() > ackedBefore {
-			// The link works, just flaky: a session that made progress
-			// earns a fresh retry budget and a short delay again.
+			// progress means the link works: fresh retry budget and short delay
 			attempt, delay = 0, s.opts.RetryDelay
 		}
 		if ctx.Err() != nil {
@@ -152,11 +146,15 @@ func (s *Sender) open(ctx context.Context) error {
 		_ = f.Close()
 		return fmt.Errorf("hash file: %w", err)
 	}
-	s.meta = transfer.NewMeta(filepath.Base(s.opts.Path),
-		uint64(s.size), s.opts.ChunkSize, sum) //nolint:gosec // size ≥ 0
-	s.log.Info("transfer prepared", "transfer_id", s.meta.TransferID,
-		"chunks", s.meta.Chunks, "chunk_size", s.meta.ChunkSize,
-		"sha256", sum)
+	size := uint64(s.size) //nolint:gosec // size ≥ 0
+	s.meta = transfer.NewMeta(filepath.Base(s.opts.Path), size, s.opts.ChunkSize, sum)
+	s.log.Info(
+		"transfer prepared",
+		"transfer_id", s.meta.TransferID,
+		"chunks", s.meta.Chunks,
+		"chunk_size", s.meta.ChunkSize,
+		"sha256", sum,
+	)
 	return nil
 }
 
@@ -166,13 +164,8 @@ func (s *Sender) close() {
 	}
 }
 
-// waitRetry sleeps before a reconnect and refuses to go on if the source
-// file changed meanwhile.
-func (s *Sender) waitRetry(
-	ctx context.Context,
-	attempt int,
-	delay time.Duration,
-) error {
+// waitRetry sleeps before a reconnect and refuses to go on if the source file changed meanwhile.
+func (s *Sender) waitRetry(ctx context.Context, attempt int, delay time.Duration) error {
 	s.reconnects.Add(1)
 	s.log.Info("reconnecting", "attempt", attempt, "delay", delay)
 	select {
@@ -183,8 +176,7 @@ func (s *Sender) waitRetry(
 	return s.checkSource()
 }
 
-// checkSource refuses to resume when the file on disk is no longer the
-// one that was hashed: size or modification time changed.
+// checkSource refuses to resume when the file's size or modification time changed.
 func (s *Sender) checkSource() error {
 	st, err := os.Stat(s.opts.Path)
 	if err != nil {
@@ -224,12 +216,10 @@ func (s *Sender) session(conn net.Conn) error {
 	return s.finalize(conn)
 }
 
-// handshake runs HELLO and META and returns the receiver's validated
-// resume state, adopting its chunk size if the transfer already exists.
+// handshake runs HELLO and META and returns the validated resume state, adopting its chunk size.
 func (s *Sender) handshake(conn net.Conn) (protocol.ResumeState, error) {
 	var rs protocol.ResumeState
-	if err := s.write(conn, protocol.TypeHello,
-		protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := s.write(conn, protocol.TypeHello, protocol.Hello{Version: protocol.Version}); err != nil {
 		return rs, err
 	}
 	var hello protocol.Hello
@@ -254,8 +244,7 @@ func (s *Sender) handshake(conn net.Conn) (protocol.ResumeState, error) {
 	return rs, nil
 }
 
-// applyResumeState resets the per-session counters from what the
-// receiver already has and returns it as a bitmap.
+// applyResumeState resets the session counters from what the receiver already has.
 func (s *Sender) applyResumeState(rs protocol.ResumeState) *transfer.Bitmap {
 	have := transfer.NewBitmap(s.meta.Chunks)
 	var bytes uint64
@@ -271,16 +260,20 @@ func (s *Sender) applyResumeState(rs protocol.ResumeState) *transfer.Bitmap {
 	s.skipped.Store(have.Count())
 	s.done.Store(have.Count())
 	s.bytesAcked.Store(bytes)
-	s.log.Info("resume state", "status", rs.Status,
-		"received", rs.ReceivedChunks, "chunks", s.meta.Chunks,
-		"ranges", rs.Received)
+	s.log.Info(
+		"resume state",
+		"status", rs.Status,
+		"received", rs.ReceivedChunks,
+		"chunks", s.meta.Chunks,
+		"ranges", rs.Received,
+	)
 	return have
 }
 
 // finalize asks the receiver to verify the whole file.
 func (s *Sender) finalize(conn net.Conn) error {
-	if err := s.write(conn, protocol.TypeFinalize,
-		protocol.Finalize{TransferID: s.meta.TransferID}); err != nil {
+	fin := protocol.Finalize{TransferID: s.meta.TransferID}
+	if err := s.write(conn, protocol.TypeFinalize, fin); err != nil {
 		return err
 	}
 	var done protocol.Complete
@@ -289,22 +282,17 @@ func (s *Sender) finalize(conn net.Conn) error {
 		return err
 	}
 	if done.Checksum != s.meta.Checksum {
-		return fmt.Errorf("receiver reported checksum %s, want %s",
-			done.Checksum, s.meta.Checksum)
+		return fmt.Errorf("receiver reported checksum %s, want %s", done.Checksum, s.meta.Checksum)
 	}
-	s.log.Info("transfer completed", "transfer_id", s.meta.TransferID,
-		"sha256", done.Checksum)
+	s.log.Info("transfer completed", "transfer_id", s.meta.TransferID, "sha256", done.Checksum)
 	return nil
 }
 
-// adoptResumeState validates what the receiver claims before it drives
-// which chunks we skip.
+// adoptResumeState validates what the receiver claims before it drives which chunks we skip.
 func (s *Sender) adoptResumeState(rs *protocol.ResumeState) error {
-	size := uint64(s.size) //nolint:gosec // size ≥ 0
-	if rs.ChunkSize < transfer.MinChunkSize ||
-		rs.Chunks != (size+uint64(rs.ChunkSize)-1)/uint64(rs.ChunkSize) {
-		return fmt.Errorf("%w: chunk size %d, %d chunks",
-			ErrBadResumeState, rs.ChunkSize, rs.Chunks)
+	size := s.meta.FileSize
+	if rs.ChunkSize < transfer.MinChunkSize || rs.Chunks != transfer.ChunkCount(size, rs.ChunkSize) {
+		return fmt.Errorf("%w: chunk size %d, %d chunks", ErrBadResumeState, rs.ChunkSize, rs.Chunks)
 	}
 	for _, r := range rs.Received {
 		if r[0] > r[1] || r[1] >= rs.Chunks {
@@ -378,12 +366,7 @@ func (s *Sender) write(conn net.Conn, t protocol.Type, v any) error {
 	return protocol.WriteJSON(conn, t, v)
 }
 
-func (s *Sender) expect(
-	conn net.Conn,
-	t protocol.Type,
-	timeout time.Duration,
-	v any,
-) error {
+func (s *Sender) expect(conn net.Conn, t protocol.Type, timeout time.Duration, v any) error {
 	_ = conn.SetReadDeadline(time.Now().Add(timeout))
 	return protocol.Expect(conn, t, controlPayload, v)
 }

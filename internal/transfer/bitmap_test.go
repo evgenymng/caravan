@@ -29,10 +29,8 @@ func TestBitmap_RangesMissing(t *testing.T) {
 	for _, i := range []uint64{0, 1, 2, 37, 40, 41, 49} {
 		b.Set(i)
 	}
-	require.Equal(t,
-		[][2]uint64{{0, 2}, {37, 37}, {40, 41}, {49, 49}}, b.Ranges())
-	require.Equal(t,
-		[][2]uint64{{3, 36}, {38, 39}, {42, 48}}, b.Missing())
+	require.Equal(t, [][2]uint64{{0, 2}, {37, 37}, {40, 41}, {49, 49}}, b.Ranges())
+	require.Equal(t, [][2]uint64{{3, 36}, {38, 39}, {42, 48}}, b.Missing())
 }
 
 func TestBitmap_LoadRoundTrip(t *testing.T) {

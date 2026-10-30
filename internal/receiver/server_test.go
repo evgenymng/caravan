@@ -31,10 +31,7 @@ func (w corruptingWriter) Write(p []byte) (int, error) {
 	return w.Conn.Write(c)
 }
 
-func startServer(
-	t *testing.T,
-	cfg Config,
-) (*Server, context.CancelFunc, func() error) {
+func startServer(t *testing.T, cfg Config) (*Server, context.CancelFunc, func() error) {
 	t.Helper()
 	if cfg.Dir == "" {
 		cfg.Dir = t.TempDir()
@@ -68,25 +65,15 @@ func dial(t *testing.T, srv *Server) net.Conn {
 }
 
 // handshake runs HELLO/META and returns the receiver's resume state.
-func handshake(
-	t *testing.T,
-	conn net.Conn,
-	meta transfer.Meta,
-) protocol.ResumeState {
+func handshake(t *testing.T, conn net.Conn, meta transfer.Meta) protocol.ResumeState {
 	t.Helper()
-	require.NoError(t, protocol.WriteJSON(conn, protocol.TypeHello,
-		protocol.Hello{Version: protocol.Version}))
+	hello := protocol.Hello{Version: protocol.Version}
+	require.NoError(t, protocol.WriteJSON(conn, protocol.TypeHello, hello))
 	var ok protocol.Hello
-	require.NoError(
-		t,
-		protocol.Expect(conn, protocol.TypeHelloOK, maxPayload, &ok),
-	)
+	require.NoError(t, protocol.Expect(conn, protocol.TypeHelloOK, maxPayload, &ok))
 	require.NoError(t, protocol.WriteJSON(conn, protocol.TypeMeta, meta))
 	var rs protocol.ResumeState
-	require.NoError(
-		t,
-		protocol.Expect(conn, protocol.TypeResumeState, maxPayload, &rs),
-	)
+	require.NoError(t, protocol.Expect(conn, protocol.TypeResumeState, maxPayload, &rs))
 	return rs
 }
 
@@ -116,19 +103,13 @@ func TestServer_FullTransfer(t *testing.T) {
 	for i := range meta.Chunks {
 		require.NoError(t, protocol.WriteChunk(conn, i, chunk(data, meta, i)))
 		var ack protocol.Ack
-		require.NoError(
-			t,
-			protocol.Expect(conn, protocol.TypeAck, maxPayload, &ack),
-		)
+		require.NoError(t, protocol.Expect(conn, protocol.TypeAck, maxPayload, &ack))
 		require.Equal(t, i, ack.Index)
 	}
-	require.NoError(t, protocol.WriteJSON(conn, protocol.TypeFinalize,
-		protocol.Finalize{TransferID: meta.TransferID}))
+	fin := protocol.Finalize{TransferID: meta.TransferID}
+	require.NoError(t, protocol.WriteJSON(conn, protocol.TypeFinalize, fin))
 	var done protocol.Complete
-	require.NoError(
-		t,
-		protocol.Expect(conn, protocol.TypeComplete, maxPayload, &done),
-	)
+	require.NoError(t, protocol.Expect(conn, protocol.TypeComplete, maxPayload, &done))
 	require.Equal(t, meta.Checksum, done.Checksum)
 
 	got, err := os.ReadFile(filepath.Join(dir, "f.bin"))
@@ -139,8 +120,7 @@ func TestServer_FullTransfer(t *testing.T) {
 func TestServer_BadVersion(t *testing.T) {
 	srv, _, _ := startServer(t, Config{})
 	conn := dial(t, srv)
-	require.NoError(t, protocol.WriteJSON(conn, protocol.TypeHello,
-		protocol.Hello{Version: 99}))
+	require.NoError(t, protocol.WriteJSON(conn, protocol.TypeHello, protocol.Hello{Version: 99}))
 	expectError(t, conn, protocol.CodeBadVersion)
 }
 
@@ -151,8 +131,8 @@ func TestServer_BusyWhenFull(t *testing.T) {
 	handshake(t, first, meta)
 
 	second := dial(t, srv)
-	require.NoError(t, protocol.WriteJSON(second, protocol.TypeHello,
-		protocol.Hello{Version: protocol.Version}))
+	hello := protocol.Hello{Version: protocol.Version}
+	require.NoError(t, protocol.WriteJSON(second, protocol.TypeHello, hello))
 	expectError(t, second, protocol.CodeBusy)
 }
 
@@ -163,20 +143,17 @@ func TestServer_BadChecksumNotStored(t *testing.T) {
 	handshake(t, conn, meta)
 
 	bad := append([]byte(nil), chunk(data, meta, 0)...)
-	// Correct header for the real data, then corrupt the bytes on the wire.
+	// correct header for the real data, then corrupt the bytes on the wire
 	require.NoError(t, protocol.WriteChunk(corruptingWriter{conn}, 0, bad))
 	expectError(t, conn, protocol.CodeBadChecksum, 0)
 
-	// Wrong length but right checksum is also rejected.
+	// wrong length but right checksum is also rejected
 	require.NoError(t, protocol.WriteChunk(conn, 1, data[:10]))
 	expectError(t, conn, protocol.CodeBadChecksum)
 
 	require.NoError(t, protocol.WriteChunk(conn, 0, chunk(data, meta, 0)))
 	var ack protocol.Ack
-	require.NoError(
-		t,
-		protocol.Expect(conn, protocol.TypeAck, maxPayload, &ack),
-	)
+	require.NoError(t, protocol.Expect(conn, protocol.TypeAck, maxPayload, &ack))
 	_ = conn.Close()
 
 	rs := handshake(t, dial(t, srv), meta)
@@ -199,8 +176,8 @@ func TestServer_IncompleteFinalize(t *testing.T) {
 	_, meta := testFile(t, testChunk)
 	conn := dial(t, srv)
 	handshake(t, conn, meta)
-	require.NoError(t, protocol.WriteJSON(conn, protocol.TypeFinalize,
-		protocol.Finalize{TransferID: meta.TransferID}))
+	fin := protocol.Finalize{TransferID: meta.TransferID}
+	require.NoError(t, protocol.WriteJSON(conn, protocol.TypeFinalize, fin))
 	expectError(t, conn, protocol.CodeIncomplete)
 }
 
@@ -219,10 +196,7 @@ func TestServer_ShutdownMarksInterrupted(t *testing.T) {
 	conn := dial(t, srv)
 	handshake(t, conn, meta)
 	require.NoError(t, protocol.WriteChunk(conn, 0, chunk(data, meta, 0)))
-	require.NoError(
-		t,
-		protocol.Expect(conn, protocol.TypeAck, maxPayload, &protocol.Ack{}),
-	)
+	require.NoError(t, protocol.Expect(conn, protocol.TypeAck, maxPayload, &protocol.Ack{}))
 
 	cancel()
 	require.NoError(t, done())
@@ -234,7 +208,7 @@ func TestServer_ShutdownMarksInterrupted(t *testing.T) {
 func TestServer_RejectsHugeControlFrame(t *testing.T) {
 	srv, _, _ := startServer(t, Config{MaxChunkSize: 64 << 20})
 	conn := dial(t, srv)
-	// A HELLO claiming a 1 MiB payload must be dropped before allocation.
+	// a HELLO claiming a 1 MiB payload must be dropped before allocation
 	hdr := []byte{0, 16, 0, 1, byte(protocol.TypeHello)}
 	_, err := conn.Write(hdr)
 	require.NoError(t, err)

@@ -20,8 +20,7 @@ const (
 	bitmapFile   = "received.bitmap"
 )
 
-// Store owns the receiver's on-disk state: one directory per transfer
-// under <dir>/.caravan with metadata, a chunk bitmap and the .part file.
+// Store owns the receiver's on-disk state: <dir>/.caravan/<id>/ with metadata, bitmap and .part file.
 type Store struct {
 	dir   string
 	fsync bool
@@ -40,14 +39,13 @@ type Summary struct {
 
 // Transfer is an exclusively held, in-progress transfer.
 type Transfer struct {
-	store    *Store
-	dir      string
-	meta     transfer.Meta
-	status   transfer.Status
-	bitmap   *transfer.Bitmap
-	part     *os.File
-	released bool
-	// finalPath is set once the file has been moved into place.
+	store     *Store
+	dir       string
+	meta      transfer.Meta
+	status    transfer.Status
+	bitmap    *transfer.Bitmap
+	part      *os.File
+	released  bool
 	finalPath string
 }
 
@@ -92,8 +90,7 @@ func Scan(dir string) ([]Summary, error) {
 	return out, nil
 }
 
-// Recover marks transfers a crashed receiver left in "transferring" as
-// interrupted. Only the receiver itself calls this, at startup.
+// Recover marks transfers a crashed receiver left in "transferring" as interrupted.
 func (s *Store) Recover() error {
 	list, err := Scan(s.dir)
 	if err != nil {
@@ -116,9 +113,7 @@ func (s *Store) Recover() error {
 	return nil
 }
 
-// Acquire opens the transfer described by meta for exclusive use. An
-// existing state directory is resumed (its chunk size wins over meta's);
-// a transfer another session holds is busy until that session releases it.
+// Acquire opens or resumes the transfer for exclusive use; stored chunk size wins over meta's.
 func (s *Store) Acquire(meta transfer.Meta) (*Transfer, error) {
 	if err := meta.Validate(1 << 31); err != nil {
 		return nil, err
@@ -169,37 +164,23 @@ func (s *Store) writeMeta(dir string, md metaOnDisk) error {
 	return writeAtomic(filepath.Join(dir, metaFile), raw, s.fsync)
 }
 
-// Meta returns the stored metadata (chunk size may differ from the
-// sender's proposal on resume).
+// Meta returns the stored metadata, whose chunk size may differ from the sender's.
 func (t *Transfer) Meta() transfer.Meta { return t.meta }
 
-// Status returns the current lifecycle status.
 func (t *Transfer) Status() transfer.Status { return t.status }
 
 // Received returns received chunks as inclusive ranges.
 func (t *Transfer) Received() [][2]uint64 { return t.bitmap.Ranges() }
 
-// ReceivedChunks returns the number of received chunks.
 func (t *Transfer) ReceivedChunks() uint64 { return t.bitmap.Count() }
 
-// WriteChunk stores verified chunk data. A chunk already present is
-// acknowledged without rewriting (dup == true).
+// WriteChunk stores verified chunk data; a chunk already present is not rewritten (dup == true).
 func (t *Transfer) WriteChunk(index uint64, data []byte) (bool, error) {
 	if index >= t.meta.Chunks {
-		return false, fmt.Errorf(
-			"%w: %d of %d",
-			ErrOutOfRange,
-			index,
-			t.meta.Chunks,
-		)
+		return false, fmt.Errorf("%w: %d of %d", ErrOutOfRange, index, t.meta.Chunks)
 	}
-	if len(
-		data,
-	) != int(
-		t.meta.ChunkLen(index),
-	) { //nolint:gosec // len ≤ ChunkSize
-		return false, fmt.Errorf("%w: chunk %d has %d bytes, want %d",
-			ErrBadChunk, index, len(data), t.meta.ChunkLen(index))
+	if want := t.meta.ChunkLen(index); len(data) != int(want) {
+		return false, fmt.Errorf("%w: chunk %d has %d bytes, want %d", ErrBadChunk, index, len(data), want)
 	}
 	if t.bitmap.Has(index) {
 		return true, nil
@@ -217,20 +198,14 @@ func (t *Transfer) WriteChunk(index uint64, data []byte) (bool, error) {
 	return false, t.saveBitmap()
 }
 
-// Finalize verifies the whole file, moves it into the downloads
-// directory and removes the transfer state. On checksum mismatch the
-// transfer is dropped so the next attempt starts from scratch.
+// Finalize verifies the whole file and moves it into the downloads directory.
 func (t *Transfer) Finalize(ctx context.Context) (string, error) {
 	if t.status == transfer.StatusCompleted {
 		t.unregister()
 		return t.finalPath, nil
 	}
 	if !t.bitmap.Full() {
-		return "", fmt.Errorf(
-			"%w: missing %v",
-			ErrIncomplete,
-			t.bitmap.Missing(),
-		)
+		return "", fmt.Errorf("%w: missing %v", ErrIncomplete, t.bitmap.Missing())
 	}
 	if _, err := t.part.Seek(0, 0); err != nil {
 		return "", err
@@ -241,8 +216,7 @@ func (t *Transfer) Finalize(ctx context.Context) (string, error) {
 	}
 	if sum != t.meta.Checksum {
 		t.drop(transfer.StatusFailed)
-		return "", fmt.Errorf("%w: got %s, want %s", ErrChecksumMismatch,
-			sum[:8], t.meta.Checksum[:8])
+		return "", fmt.Errorf("%w: got %s, want %s", ErrChecksumMismatch, sum[:8], t.meta.Checksum[:8])
 	}
 	if err := t.part.Close(); err != nil {
 		return "", err
@@ -267,8 +241,7 @@ func (t *Transfer) Finalize(ctx context.Context) (string, error) {
 	return t.finalPath, nil
 }
 
-// Release records status (normally interrupted), closes the part file
-// and lets another session acquire the transfer. Safe to call twice.
+// Release records status, closes the part file and lets another session acquire the transfer.
 func (t *Transfer) Release(status transfer.Status) {
 	if t.released {
 		return
@@ -282,8 +255,7 @@ func (t *Transfer) Release(status transfer.Status) {
 	t.unregister()
 }
 
-// adoptCompleted answers a repeated META for a finished transfer whose
-// file is still in place: everything is already received.
+// adoptCompleted answers a repeated META for a finished transfer whose file is still in place.
 func (t *Transfer) adoptCompleted(md metaOnDisk) {
 	t.meta, t.status, t.finalPath = md.Meta, md.Status, md.FinalPath
 	t.bitmap = transfer.NewBitmap(t.meta.Chunks)
@@ -327,8 +299,7 @@ func (t *Transfer) create() error {
 	if err := os.MkdirAll(t.dir, 0o750); err != nil {
 		return fmt.Errorf("create transfer dir: %w", err)
 	}
-	part, err := os.OpenFile(t.partPath(),
-		os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
+	part, err := os.OpenFile(t.partPath(), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("create part file: %w", err)
 	}
@@ -346,9 +317,7 @@ func (t *Transfer) create() error {
 	return nil
 }
 
-// drop ends the transfer in a terminal status: the part file and bitmap
-// go away, metadata stays as a record (and lets a repeated FINALIZE
-// after a lost COMPLETE succeed without resending anything).
+// drop ends the transfer in a terminal status; only metadata stays, as a record.
 func (t *Transfer) drop(status transfer.Status) {
 	t.status = status
 	_ = t.part.Close()
@@ -381,8 +350,7 @@ func (t *Transfer) setStatus(st transfer.Status) error {
 }
 
 func (t *Transfer) saveBitmap() error {
-	return writeAtomic(filepath.Join(t.dir, bitmapFile), t.bitmap.Bytes(),
-		t.store.fsync)
+	return writeAtomic(filepath.Join(t.dir, bitmapFile), t.bitmap.Bytes(), t.store.fsync)
 }
 
 func readMeta(dir string) (metaOnDisk, error) {
@@ -394,8 +362,7 @@ func readMeta(dir string) (metaOnDisk, error) {
 	return md, json.Unmarshal(raw, &md)
 }
 
-// writeAtomic writes data via a temp file and rename so a crash never
-// leaves a half-written state file behind.
+// writeAtomic writes via a temp file and rename so a crash never leaves a half-written file.
 func writeAtomic(path string, data []byte, fsync bool) error {
 	tmp := path + ".tmp"
 	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
@@ -448,8 +415,7 @@ func uniquePath(path string) string {
 	}
 }
 
-// receivedChunks reads the bitmap for status output; terminal states keep
-// no bitmap, so completed reports all chunks and failed none.
+// receivedChunks counts bitmap bits; terminal states keep no bitmap: completed has all, failed none.
 func receivedChunks(dir string, md metaOnDisk) uint64 {
 	if md.Status == transfer.StatusFailed {
 		return 0
@@ -470,10 +436,8 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// fileMatches reports whether the file at path still has the checksum
-// recorded at completion; a replaced or edited file starts over.
-// shortcut: hashes under the store lock, move out if completed re-sends
-// become frequent.
+// fileMatches reports whether the file at path still has the checksum recorded at completion.
+// shortcut: hashes under the store lock, move out if completed re-sends become frequent.
 func fileMatches(path, checksum string) bool {
 	f, err := os.Open(path)
 	if err != nil {

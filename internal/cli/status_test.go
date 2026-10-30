@@ -16,8 +16,7 @@ func TestStatus_PrintsStoredTransfer(t *testing.T) {
 	dir := t.TempDir()
 	data := bytes.Repeat([]byte("x"), 2*transfer.MinChunkSize)
 	sum := sha256.Sum256(data)
-	meta := transfer.NewMeta("a.bin", uint64(len(data)), transfer.MinChunkSize,
-		hex.EncodeToString(sum[:]))
+	meta := transfer.NewMeta("a.bin", uint64(len(data)), transfer.MinChunkSize, hex.EncodeToString(sum[:]))
 	store, err := receiver.NewStore(dir, false)
 	require.NoError(t, err)
 	tr, err := store.Acquire(meta)

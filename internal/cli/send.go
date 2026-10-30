@@ -24,22 +24,20 @@ func newSendCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			size, err := parseSize(chunkSize)
 			if err != nil || size < transfer.MinChunkSize || size > 1<<30 {
-				return fmt.Errorf("invalid --chunk-size %q, want 4KB..1GB",
-					chunkSize)
+				return fmt.Errorf("invalid --chunk-size %q, want 4KB..1GB", chunkSize)
 			}
 			opts.ChunkSize = uint32(size) //nolint:gosec // ≤ 1 GiB
 
 			var bar *progress.Reporter
-			opts.OnProgress = func(st sender.Stats) {
+			barFor := func(st sender.Stats) *progress.Reporter {
 				if bar == nil {
-					bar = progress.New(
-						cmd.OutOrStdout(),
-						"send "+st.Meta.FileName,
-						st.Meta.FileSize,
-						isTTY(os.Stdout),
-					)
+					m := st.Meta
+					bar = progress.New(cmd.OutOrStdout(), "send "+m.FileName, m.FileSize, isTTY(os.Stdout))
 				}
-				bar.Update(st.BytesAcked, st.Done, st.Meta.Chunks)
+				return bar
+			}
+			opts.OnProgress = func(st sender.Stats) {
+				barFor(st).Update(st.BytesAcked, st.Done, st.Meta.Chunks)
 			}
 
 			s := sender.New(opts, slog.Default())
@@ -47,41 +45,31 @@ func newSendCmd() *cobra.Command {
 				return err
 			}
 			st := s.Stats()
-			if bar == nil {
-				bar = progress.New(cmd.OutOrStdout(), "send "+st.Meta.FileName,
-					st.Meta.FileSize, isTTY(os.Stdout))
-			}
-			bar.Finish(st.Meta.FileSize, st.Meta.Chunks)
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-				"completed: transfer %s, sha256 %s\n"+
-					"chunks sent %d, acked %d, skipped on resume %d, "+
-					"acked-and-resent %d, reconnects %d\n",
-				st.Meta.TransferID, st.Meta.Checksum,
-				st.Sent, st.Acked, st.Skipped, st.Resent, st.Reconnects)
+			barFor(st).Finish(st.Meta.FileSize, st.Meta.Chunks)
+			out, m := cmd.OutOrStdout(), st.Meta
+			_, _ = fmt.Fprintf(out, "completed: transfer %s, sha256 %s\n", m.TransferID, m.Checksum)
+			_, _ = fmt.Fprintf(
+				out,
+				"chunks sent %d, acked %d, skipped on resume %d, acked-and-resent %d, reconnects %d\n",
+				st.Sent,
+				st.Acked,
+				st.Skipped,
+				st.Resent,
+				st.Reconnects,
+			)
 			return nil
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(&opts.Path, "file", "", "file to send (required)")
 	f.StringVar(&opts.Addr, "addr", "", "receiver address host:port (required)")
-	f.StringVar(
-		&chunkSize,
-		"chunk-size",
-		"1MB",
-		"chunk size, 4KB..1GB, e.g. 256KB, 1MB, 4MB",
-	)
-	f.IntVar(&opts.MaxRetries, "max-retries", 10,
-		"reconnect attempts after a connection loss (0 = forever)")
-	f.DurationVar(&opts.RetryDelay, "retry-delay", time.Second,
-		"initial delay before reconnecting (doubles up to 30s)")
-	f.DurationVar(&opts.DialTimeout, "dial-timeout", 5*time.Second,
-		"TCP connect timeout")
-	f.DurationVar(&opts.AckTimeout, "ack-timeout", 30*time.Second,
-		"how long to wait for an ACK or handshake reply")
-	f.DurationVar(&opts.FinalizeTimeout, "finalize-timeout", 5*time.Minute,
-		"how long to wait for the receiver's whole-file verification")
-	f.Int64Var(&opts.DropAfterChunk, "debug-drop-after-chunk", -1,
-		"close the connection once right after sending this chunk")
+	f.StringVar(&chunkSize, "chunk-size", "1MB", "chunk size, 4KB..1GB, e.g. 256KB, 1MB, 4MB")
+	f.IntVar(&opts.MaxRetries, "max-retries", 10, "reconnect attempts after a connection loss (0 = forever)")
+	f.DurationVar(&opts.RetryDelay, "retry-delay", time.Second, "first reconnect delay, doubles up to 30s")
+	f.DurationVar(&opts.DialTimeout, "dial-timeout", 5*time.Second, "TCP connect timeout")
+	f.DurationVar(&opts.AckTimeout, "ack-timeout", 30*time.Second, "ACK and handshake reply timeout")
+	f.DurationVar(&opts.FinalizeTimeout, "finalize-timeout", 5*time.Minute, "whole-file check timeout")
+	f.Int64Var(&opts.DropAfterChunk, "debug-drop-after-chunk", -1, "drop the link once after this chunk")
 	_ = f.MarkHidden("debug-drop-after-chunk")
 	_ = cmd.MarkFlagRequired("file")
 	_ = cmd.MarkFlagRequired("addr")

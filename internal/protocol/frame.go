@@ -38,7 +38,6 @@ var (
 // Type identifies the message carried by a frame.
 type Type uint8
 
-// WriteFrame writes one frame with the given type and payload.
 func WriteFrame(w io.Writer, t Type, payload []byte) error {
 	return writeFrame(w, t, payload, nil)
 }
@@ -72,8 +71,7 @@ func WriteJSON(w io.Writer, t Type, v any) error {
 	return WriteFrame(w, t, b)
 }
 
-// Expect reads the next frame, which must be of type want, and decodes
-// its JSON payload into v. An ERROR frame is returned as *Error.
+// Expect decodes the next frame of type want into v; an ERROR frame comes back as *Error.
 func Expect(r io.Reader, want Type, maxPayload uint32, v any) error {
 	t, payload, err := ReadFrame(r, maxPayload)
 	if err != nil {
@@ -92,8 +90,7 @@ func Expect(r io.Reader, want Type, maxPayload uint32, v any) error {
 	return json.Unmarshal(payload, v)
 }
 
-// writeFrame writes a frame whose payload is head followed by tail, using
-// a single vectored write so large chunks are never copied.
+// writeFrame writes head and tail as one payload in a single vectored write, so chunks are not copied.
 func writeFrame(w io.Writer, t Type, head, tail []byte) error {
 	var hdr [frameHeaderLen]byte
 	n := 1 + len(head) + len(tail)

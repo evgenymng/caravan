@@ -23,10 +23,7 @@ func TestPlainTransfer(t *testing.T) {
 
 	require.Equal(t, sum, fileSum(t, filepath.Join(dir, "archive.zip")))
 	require.Equal(t, uint64(12), s.Stats().Acked)
-	require.NoFileExists(
-		t,
-		filepath.Join(dir, ".caravan", s.Stats().Meta.TransferID),
-	)
+	require.NoFileExists(t, filepath.Join(dir, ".caravan", s.Stats().Meta.TransferID))
 }
 
 func TestHundredMegabytes(t *testing.T) {
@@ -113,7 +110,7 @@ func TestModifiedSourceIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, sender.ErrSourceChanged)
 	require.NoFileExists(t, filepath.Join(dir, "f.bin"))
 
-	// The rewritten file is a new transfer with its own id.
+	// the rewritten file is a new transfer with its own id
 	s2 := sender.New(senderOpts(path, rcv.Addr().String(), chunk64K), discard)
 	require.NoError(t, s2.Run(context.Background()))
 	require.Equal(t, uint64(0), s2.Stats().Skipped)
@@ -148,10 +145,7 @@ func TestReceiverRestartResumesFromDisk(t *testing.T) {
 
 	<-stopOnce
 	require.NoError(t, first.wait())
-	second := startReceiver(
-		t,
-		receiver.Config{Dir: dir, Addr: addr, Fsync: true},
-	)
+	second := startReceiver(t, receiver.Config{Dir: dir, Addr: addr, Fsync: true})
 	_ = second
 
 	s := <-done

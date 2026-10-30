@@ -11,12 +11,8 @@ import (
 
 func TestRender(t *testing.T) {
 	line := render("send", 337<<20, 524<<20, 322, 500, 10<<20, 18*time.Second)
-	require.Equal(t,
-		"send  337.0 MB / 524.0 MB  64.3%  322/500 chunks  10.0 MB/s  ETA 18s",
-		line)
-	require.Equal(t,
-		"recv  0 B / 10 B  0.0%  0/1 chunks  0 B/s  ETA --",
-		render("recv", 0, 10, 0, 1, 0, 0))
+	require.Equal(t, "send  337.0 MB / 524.0 MB  64.3%  322/500 chunks  10.0 MB/s  ETA 18s", line)
+	require.Equal(t, "recv  0 B / 10 B  0.0%  0/1 chunks  0 B/s  ETA --", render("recv", 0, 10, 0, 1, 0, 0))
 }
 
 func TestReporter_ThrottlesAndFinishes(t *testing.T) {

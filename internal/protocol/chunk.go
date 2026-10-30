@@ -10,7 +10,7 @@ import (
 // chunkHeaderLen is uint64 index + uint32 size + 32-byte SHA-256.
 const chunkHeaderLen = 8 + 4 + 32
 
-// Chunk is a decoded CHUNK payload. Data aliases the frame buffer.
+// Chunk is a decoded CHUNK payload; Data aliases the frame buffer.
 type Chunk struct {
 	Index uint64
 	Sum   [32]byte
@@ -38,8 +38,7 @@ func DecodeChunk(payload []byte) (Chunk, error) {
 	}
 	size := binary.BigEndian.Uint32(payload[8:12])
 	if int(size) != len(payload)-chunkHeaderLen {
-		return Chunk{}, fmt.Errorf("chunk size %d does not match payload %d",
-			size, len(payload)-chunkHeaderLen)
+		return Chunk{}, fmt.Errorf("chunk size %d, payload %d", size, len(payload)-chunkHeaderLen)
 	}
 	c := Chunk{
 		Index: binary.BigEndian.Uint64(payload[:8]),

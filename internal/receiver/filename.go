@@ -6,10 +6,7 @@ import (
 	"unicode"
 )
 
-// sanitizeName turns a network-supplied file name into a bare name that
-// is safe to create inside the downloads directory. Any path components,
-// control characters and leading dots are dropped; an empty result falls
-// back to fallback (the transfer id).
+// sanitizeName drops path components, control characters and leading dots; empty becomes fallback.
 func sanitizeName(name, fallback string) string {
 	name = strings.ReplaceAll(name, `\`, "/")
 	name = filepath.Base(name)

@@ -32,8 +32,7 @@ var ErrInvalidMeta = errors.New("invalid transfer metadata")
 // Status is the lifecycle state of a transfer on the receiver.
 type Status string
 
-// Meta describes a file being transferred. It is sent by the sender
-// before any chunk and persisted by the receiver.
+// Meta describes the file: the sender sends it before any chunk, the receiver persists it.
 type Meta struct {
 	TransferID string `json:"transferId"`
 	FileName   string `json:"fileName"`
@@ -50,9 +49,14 @@ func NewMeta(name string, size uint64, chunkSize uint32, sum string) Meta {
 		FileName:   name,
 		FileSize:   size,
 		ChunkSize:  chunkSize,
-		Chunks:     (size + uint64(chunkSize) - 1) / uint64(chunkSize),
+		Chunks:     ChunkCount(size, chunkSize),
 		Checksum:   sum,
 	}
+}
+
+// ChunkCount returns how many chunks of chunkSize cover size bytes.
+func ChunkCount(size uint64, chunkSize uint32) uint64 {
+	return (size + uint64(chunkSize) - 1) / uint64(chunkSize)
 }
 
 // ChunkLen returns the byte length of chunk i (the last one may be short).
@@ -71,20 +75,22 @@ func (m Meta) Validate(maxChunkSize uint32) error {
 	case m.TransferID != TransferID(m.Checksum, m.FileSize, m.FileName):
 		return fmt.Errorf("%w: transfer id does not match", ErrInvalidMeta)
 	case m.ChunkSize < MinChunkSize || m.ChunkSize > maxChunkSize:
-		return fmt.Errorf("%w: chunk size %d outside [%d, %d]",
-			ErrInvalidMeta, m.ChunkSize, MinChunkSize, maxChunkSize)
-	case m.Chunks != (m.FileSize+uint64(m.ChunkSize)-1)/uint64(m.ChunkSize):
-		return fmt.Errorf("%w: %d chunks for %d bytes of %d",
-			ErrInvalidMeta, m.Chunks, m.FileSize, m.ChunkSize)
+		return fmt.Errorf(
+			"%w: chunk size %d outside [%d, %d]",
+			ErrInvalidMeta,
+			m.ChunkSize,
+			MinChunkSize,
+			maxChunkSize,
+		)
+	case m.Chunks != ChunkCount(m.FileSize, m.ChunkSize):
+		return fmt.Errorf("%w: %d chunks for %d bytes", ErrInvalidMeta, m.Chunks, m.FileSize)
 	case m.Chunks > MaxChunks:
-		return fmt.Errorf("%w: %d chunks, max %d", ErrInvalidMeta,
-			m.Chunks, MaxChunks)
+		return fmt.Errorf("%w: %d chunks, max %d", ErrInvalidMeta, m.Chunks, MaxChunks)
 	}
 	return nil
 }
 
-// TransferID derives a stable id from file checksum, size and name, so the
-// same file resumes under the same id without sender-side state.
+// TransferID derives a stable id from file checksum, size and name, so resume needs no sender state.
 func TransferID(sum string, size uint64, name string) string {
 	h := sha256.New()
 	h.Write([]byte(sum))

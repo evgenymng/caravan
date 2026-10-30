@@ -38,8 +38,7 @@ func newReceiveCmd() *cobra.Command {
 				defer mu.Unlock()
 				bar, ok := bars[m.TransferID]
 				if !ok {
-					bar = progress.New(cmd.OutOrStdout(), "recv "+m.FileName,
-						m.FileSize, isTTY(os.Stdout))
+					bar = progress.New(cmd.OutOrStdout(), "recv "+m.FileName, m.FileSize, isTTY(os.Stdout))
 					bars[m.TransferID] = bar
 				}
 				done := min(received*uint64(m.ChunkSize), m.FileSize)
@@ -61,16 +60,11 @@ func newReceiveCmd() *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&cfg.Addr, "addr", ":8080", "listen address")
 	f.StringVar(&cfg.Dir, "dir", "./downloads", "directory for received files")
-	f.IntVar(&cfg.MaxTransfers, "max-transfers", 4,
-		"maximum concurrent transfers")
-	f.StringVar(&maxChunkSize, "max-chunk-size", "64MB",
-		"largest chunk size accepted from senders")
-	f.DurationVar(&cfg.ReadTimeout, "read-timeout", 60*time.Second,
-		"close idle connections after this long without a frame")
-	f.BoolVar(&noFsync, "no-fsync", false,
-		"do not fsync chunks and state before ACK (faster, less durable)")
-	f.DurationVar(&cfg.AckDelay, "debug-ack-delay", 0,
-		"delay every ACK (demonstrates sender ACK timeout)")
+	f.IntVar(&cfg.MaxTransfers, "max-transfers", 4, "maximum concurrent transfers")
+	f.StringVar(&maxChunkSize, "max-chunk-size", "64MB", "largest chunk size accepted from senders")
+	f.DurationVar(&cfg.ReadTimeout, "read-timeout", 60*time.Second, "close a connection idle this long")
+	f.BoolVar(&noFsync, "no-fsync", false, "do not fsync chunks and state before ACK (faster, less durable)")
+	f.DurationVar(&cfg.AckDelay, "debug-ack-delay", 0, "delay every ACK (demonstrates sender ACK timeout)")
 	_ = f.MarkHidden("debug-ack-delay")
 	return cmd
 }

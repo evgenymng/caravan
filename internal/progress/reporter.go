@@ -7,8 +7,7 @@ import (
 	"time"
 )
 
-// Reporter prints progress to out: a redrawn line on a TTY, or one line
-// every interval otherwise.
+// Reporter prints progress: a redrawn line on a TTY, otherwise a line per interval.
 type Reporter struct {
 	out      io.Writer
 	label    string
@@ -19,8 +18,7 @@ type Reporter struct {
 	last     time.Time
 }
 
-// New returns a reporter for total bytes. On a TTY it refreshes 5×/s,
-// otherwise it prints a line every 2 s.
+// New returns a reporter for total bytes that draws 5×/s on a TTY and every 2 s otherwise.
 func New(out io.Writer, label string, total uint64, tty bool) *Reporter {
 	r := &Reporter{
 		out: out, label: label, total: total, tty: tty,
@@ -61,15 +59,15 @@ func FormatBytes(n uint64) string {
 
 func (r *Reporter) draw(done, chunksDone, chunksTotal uint64, final bool) {
 	elapsed := time.Since(r.start).Seconds()
-	var speed, eta float64
+	var speed float64
 	if elapsed >= 1 { // too noisy before a full second of samples
 		speed = float64(done) / elapsed
 	}
+	var eta time.Duration
 	if speed > 0 && done < r.total {
-		eta = float64(r.total-done) / speed
+		eta = time.Duration(float64(r.total-done) / speed * float64(time.Second))
 	}
-	line := render(r.label, done, r.total, chunksDone, chunksTotal,
-		speed, time.Duration(eta*float64(time.Second)))
+	line := render(r.label, done, r.total, chunksDone, chunksTotal, speed, eta)
 	switch {
 	case r.tty && final:
 		_, _ = fmt.Fprintf(r.out, "\r%s\n", line)
@@ -80,8 +78,11 @@ func (r *Reporter) draw(done, chunksDone, chunksTotal uint64, final bool) {
 	}
 }
 
-func render(label string, done, total, chunksDone, chunksTotal uint64,
-	speed float64, eta time.Duration,
+func render(
+	label string,
+	done, total, chunksDone, chunksTotal uint64,
+	speed float64,
+	eta time.Duration,
 ) string {
 	pct := 0.0
 	if total > 0 {
@@ -91,7 +92,15 @@ func render(label string, done, total, chunksDone, chunksTotal uint64,
 	if eta > 0 {
 		etaStr = eta.Round(time.Second).String()
 	}
-	return fmt.Sprintf("%s  %s / %s  %.1f%%  %d/%d chunks  %s/s  ETA %s",
-		label, FormatBytes(done), FormatBytes(total), pct,
-		chunksDone, chunksTotal, FormatBytes(uint64(speed)), etaStr)
+	return fmt.Sprintf(
+		"%s  %s / %s  %.1f%%  %d/%d chunks  %s/s  ETA %s",
+		label,
+		FormatBytes(done),
+		FormatBytes(total),
+		pct,
+		chunksDone,
+		chunksTotal,
+		FormatBytes(uint64(speed)),
+		etaStr,
+	)
 }

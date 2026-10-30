@@ -48,8 +48,7 @@ func TestJSON_RoundTrip(t *testing.T) {
 func TestExpect_ErrorFrame(t *testing.T) {
 	var buf bytes.Buffer
 	idx := uint64(7)
-	require.NoError(t, WriteJSON(&buf, TypeError,
-		Error{Code: CodeBadChecksum, Message: "boom", Index: &idx}))
+	require.NoError(t, WriteJSON(&buf, TypeError, Error{Code: CodeBadChecksum, Message: "boom", Index: &idx}))
 
 	var ack Ack
 	err := Expect(&buf, TypeAck, 1<<10, &ack)

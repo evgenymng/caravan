@@ -26,8 +26,7 @@ type Hello struct {
 // Meta is the META payload: the file description from transfer.Meta.
 type Meta = transfer.Meta
 
-// ResumeState is the receiver's answer to META: which chunks it has.
-// ChunkSize/Chunks echo the stored values so a sender can adopt them.
+// ResumeState is the receiver's answer to META: which chunks it has and the stored chunk size.
 type ResumeState struct {
 	TransferID     string          `json:"transferId"`
 	Status         transfer.Status `json:"status"`
