@@ -50,3 +50,11 @@ func TestBitmap_Zero(t *testing.T) {
 	require.True(t, b.Full())
 	require.Nil(t, b.Missing())
 }
+
+func TestBitmap_LoadIgnoresTailBits(t *testing.T) {
+	b, err := LoadBitmap(3, []byte{0xFF})
+	require.NoError(t, err)
+	require.Equal(t, uint64(3), b.Count())
+	require.True(t, b.Full())
+	require.Equal(t, [][2]uint64{{0, 2}}, b.Ranges())
+}

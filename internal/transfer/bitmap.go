@@ -24,6 +24,9 @@ func LoadBitmap(n uint64, raw []byte) (*Bitmap, error) {
 	}
 	b := &Bitmap{n: n, bits: make([]byte, len(raw))}
 	copy(b.bits, raw)
+	if r := n % 8; r != 0 {
+		b.bits[len(b.bits)-1] &= 1<<r - 1 // bits past n are garbage
+	}
 	for _, x := range b.bits {
 		b.count += uint64(bits.OnesCount8(x)) //nolint:gosec // 0..8
 	}
