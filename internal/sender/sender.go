@@ -124,9 +124,7 @@ func (s *Sender) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		var perr *protocol.Error
-		if (errors.As(err, &perr) && perr.Fatal()) ||
-			errors.Is(err, ErrBadResumeState) {
+		if fatal(err) {
 			return err
 		}
 		s.log.Warn("transfer interrupted", "error", err)
@@ -250,13 +248,7 @@ func (s *Sender) handshake(conn net.Conn) (protocol.ResumeState, error) {
 		return rs, err
 	}
 	if rs.ChunkSize != s.meta.ChunkSize {
-		s.log.Warn(
-			"receiver already has this transfer with another chunk size, adopting it",
-			"requested",
-			s.meta.ChunkSize,
-			"stored",
-			rs.ChunkSize,
-		)
+		s.log.Warn("adopting receiver's chunk size", "requested", s.meta.ChunkSize, "stored", rs.ChunkSize)
 		s.meta.ChunkSize, s.meta.Chunks = rs.ChunkSize, rs.Chunks
 	}
 	return rs, nil
@@ -336,11 +328,7 @@ func (s *Sender) sendChunk(conn net.Conn, i uint64, buf []byte) error {
 		s.sent.Add(1)
 		if s.ackedBy.Has(i) {
 			s.resent.Add(1)
-			s.log.Error(
-				"protocol bug: resending an acknowledged chunk",
-				"chunk",
-				i,
-			)
+			s.log.Error("protocol bug: resending an acknowledged chunk", "chunk", i)
 		}
 		s.log.Debug("chunk sent", "chunk", i, "bytes", len(data))
 		if s.shouldDrop(i) {
@@ -353,15 +341,9 @@ func (s *Sender) sendChunk(conn net.Conn, i uint64, buf []byte) error {
 		var ack protocol.Ack
 		err := s.expect(conn, protocol.TypeAck, s.opts.AckTimeout, &ack)
 		var perr *protocol.Error
-		if errors.As(err, &perr) && perr.Code == protocol.CodeBadChecksum &&
-			try < maxChunkResend {
-			s.log.Warn(
-				"receiver rejected chunk, resending",
-				"chunk",
-				i,
-				"try",
-				try,
-			)
+		rejected := errors.As(err, &perr) && perr.Code == protocol.CodeBadChecksum
+		if rejected && try < maxChunkResend {
+			s.log.Warn("receiver rejected chunk, resending", "chunk", i, "try", try)
 			continue
 		}
 		if err != nil {
@@ -404,4 +386,13 @@ func (s *Sender) expect(
 ) error {
 	_ = conn.SetReadDeadline(time.Now().Add(timeout))
 	return protocol.Expect(conn, t, controlPayload, v)
+}
+
+// fatal reports errors that reconnecting cannot fix.
+func fatal(err error) bool {
+	var perr *protocol.Error
+	if errors.As(err, &perr) {
+		return perr.Fatal()
+	}
+	return errors.Is(err, ErrBadResumeState)
 }

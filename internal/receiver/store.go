@@ -145,20 +145,12 @@ func (s *Store) open(meta transfer.Meta) (*Transfer, error) {
 		return nil, fmt.Errorf("read metadata: %w", err)
 	}
 	stored := err == nil
-	switch {
-	case stored && md.Status == transfer.StatusCompleted &&
-		fileMatches(md.FinalPath, md.Checksum):
-		// The sender never saw COMPLETE: answer as completed again.
-		t.adoptCompleted(md)
+	finished := stored && md.Status == transfer.StatusCompleted && fileMatches(md.FinalPath, md.Checksum)
+	if finished {
+		t.adoptCompleted(md) // sender never saw COMPLETE
 		return t, nil
-	case stored && md.Status != transfer.StatusFailed &&
-		fileExists(filepath.Join(dir, bitmapFile)):
-		// In progress, or completed but crashed before the .part moved.
-		err = t.resume(md)
-	default:
-		err = t.create() // terminal leftover or nothing: start fresh
 	}
-	if err != nil {
+	if err := t.load(md, stored); err != nil {
 		return nil, err
 	}
 	if err := t.setStatus(transfer.StatusTransferring); err != nil {
@@ -298,6 +290,17 @@ func (t *Transfer) adoptCompleted(md metaOnDisk) {
 	for i := range t.meta.Chunks {
 		t.bitmap.Set(i)
 	}
+}
+
+// load resumes stored state while its bitmap is there, otherwise starts from scratch.
+func (t *Transfer) load(md metaOnDisk, stored bool) error {
+	if !stored || md.Status == transfer.StatusFailed {
+		return t.create()
+	}
+	if !fileExists(filepath.Join(t.dir, bitmapFile)) {
+		return t.create() // completed, but the file is gone or changed
+	}
+	return t.resume(md)
 }
 
 // resume reopens an interrupted transfer from its stored state.

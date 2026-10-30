@@ -249,10 +249,7 @@ func (c *session) handleChunk(tr *Transfer, payload []byte) error {
 		return c.fail(protocol.CodeBadChecksum, "checksum mismatch", &ch.Index)
 	}
 	dup, err := tr.WriteChunk(ch.Index, ch.Data)
-	switch {
-	case errors.Is(err, ErrBadChunk):
-		return c.fail(protocol.CodeBadChecksum, err.Error(), &ch.Index)
-	case err != nil:
+	if err != nil {
 		return c.fail(codeFor(err), err.Error(), &ch.Index)
 	}
 	c.log.Debug("chunk stored", "chunk", ch.Index, "bytes", len(ch.Data),
@@ -276,19 +273,16 @@ func (c *session) write(t protocol.Type, v any) error {
 	return protocol.WriteJSON(c.conn, t, v)
 }
 
-// fail sends an ERROR frame. For non-fatal codes it returns nil so the
-// session can continue; for fatal ones it returns the error to end it.
+// fail sends an ERROR frame and ends the session, unless the sender is expected to resend a bad chunk.
 func (c *session) fail(code, msg string, index *uint64) error {
-	if err := c.write(protocol.TypeError, protocol.Error{
-		Code: code, Message: msg, Index: index,
-	}); err != nil {
+	e := &protocol.Error{Code: code, Message: msg, Index: index}
+	if err := c.write(protocol.TypeError, e); err != nil {
 		return err
 	}
-	e := &protocol.Error{Code: code, Message: msg, Index: index}
-	if e.Fatal() || code == protocol.CodeBusy || code == protocol.CodeIOError {
-		return e
+	if code == protocol.CodeBadChecksum {
+		return nil
 	}
-	return nil
+	return e
 }
 
 func codeFor(err error) string {
@@ -297,6 +291,8 @@ func codeFor(err error) string {
 		return protocol.CodeBusy
 	case errors.Is(err, transfer.ErrInvalidMeta):
 		return protocol.CodeInvalidMeta
+	case errors.Is(err, ErrBadChunk):
+		return protocol.CodeBadChecksum
 	case errors.Is(err, ErrOutOfRange):
 		return protocol.CodeOutOfRange
 	case errors.Is(err, ErrIncomplete):
