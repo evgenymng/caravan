@@ -201,7 +201,9 @@ func TestStore_ScanIsReadOnlyRecoverMarksInterrupted(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, transfer.StatusTransferring, list[0].Status)
 
-	require.NoError(t, other.Recover()) // receiver restart
+	list, err = other.Recover() // receiver restart
+	require.NoError(t, err)
+	require.Equal(t, transfer.StatusInterrupted, list[0].Status)
 	list, err = Scan(dir)
 	require.NoError(t, err)
 	require.Equal(t, transfer.StatusInterrupted, list[0].Status)

@@ -79,10 +79,11 @@ func (s *Server) Addr() net.Addr { return s.ln.Addr() }
 
 // Serve accepts connections until ctx is cancelled, then waits for sessions to persist state.
 func (s *Server) Serve(ctx context.Context) error {
-	if err := s.store.Recover(); err != nil {
+	list, err := s.store.Recover()
+	if err != nil {
 		s.log.Warn("recover stored transfers", "error", err)
 	}
-	s.logStored()
+	s.logStored(list)
 	s.log.Info("listening", "addr", s.ln.Addr().String())
 
 	sessions, cancelSessions := context.WithCancel(context.Background())
@@ -90,7 +91,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	stop := context.AfterFunc(ctx, func() { _ = s.ln.Close() })
 	defer stop()
 
-	err := s.acceptLoop(sessions)
+	err = s.acceptLoop(sessions)
 	s.log.Info("shutting down")
 	cancelSessions()
 	s.waitSessions()
@@ -111,11 +112,7 @@ func (s *Server) acceptLoop(ctx context.Context) error {
 	}
 }
 
-func (s *Server) logStored() {
-	list, err := Scan(s.cfg.Dir)
-	if err != nil {
-		return
-	}
+func (s *Server) logStored(list []Summary) {
 	for _, t := range list {
 		s.log.Info(
 			"stored transfer",

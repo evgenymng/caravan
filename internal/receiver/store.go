@@ -78,51 +78,12 @@ func NewStore(dir string, fsync bool, maxChunkSize uint32) (*Store, error) {
 
 // Scan lists transfers stored under dir without touching them.
 func Scan(dir string) ([]Summary, error) {
-	entries, err := os.ReadDir(filepath.Join(dir, stateDirName))
-	if err != nil {
-		return nil, err
-	}
-	var out []Summary
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		tdir := filepath.Join(dir, stateDirName, e.Name())
-		md, err := readMeta(tdir)
-		if err != nil {
-			continue // not ours or damaged; leave it alone
-		}
-		out = append(out, Summary{
-			Meta:           md.Meta,
-			Status:         md.Status,
-			ReceivedChunks: receivedChunks(tdir, md),
-			UpdatedAt:      md.UpdatedAt,
-		})
-	}
-	return out, nil
+	return scan(dir, nil)
 }
 
-// Recover marks transfers a crashed receiver left in "transferring" as interrupted.
-func (s *Store) Recover() error {
-	list, err := Scan(s.dir)
-	if err != nil {
-		return err
-	}
-	for _, t := range list {
-		if t.Status != transfer.StatusTransferring {
-			continue
-		}
-		dir := filepath.Join(s.dir, stateDirName, t.TransferID)
-		md, err := readMeta(dir)
-		if err != nil {
-			continue
-		}
-		md.Status = transfer.StatusInterrupted
-		if err := s.writeMeta(dir, md); err != nil {
-			return err
-		}
-	}
-	return nil
+// Recover marks transfers a crashed receiver left in "transferring" as interrupted and lists all stored ones.
+func (s *Store) Recover() ([]Summary, error) {
+	return scan(s.dir, s)
 }
 
 // Acquire opens or resumes the transfer for exclusive use; stored chunk size wins over meta's.
@@ -385,6 +346,38 @@ func (t *Transfer) setStatus(st transfer.Status) error {
 
 func (t *Transfer) saveBitmap() error {
 	return writeAtomic(filepath.Join(t.dir, bitmapFile), t.bitmap.Bytes(), t.store.fsync)
+}
+
+// scan reads every stored transfer; with s set, it first marks crashed ones interrupted.
+func scan(dir string, s *Store) ([]Summary, error) {
+	entries, err := os.ReadDir(filepath.Join(dir, stateDirName))
+	if err != nil {
+		return nil, err
+	}
+	var out []Summary
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		tdir := filepath.Join(dir, stateDirName, e.Name())
+		md, err := readMeta(tdir)
+		if err != nil {
+			continue // not ours or damaged; leave it alone
+		}
+		if s != nil && md.Status == transfer.StatusTransferring {
+			md.Status = transfer.StatusInterrupted
+			if err := s.writeMeta(tdir, md); err != nil {
+				return nil, err
+			}
+		}
+		out = append(out, Summary{
+			Meta:           md.Meta,
+			Status:         md.Status,
+			ReceivedChunks: receivedChunks(tdir, md),
+			UpdatedAt:      md.UpdatedAt,
+		})
+	}
+	return out, nil
 }
 
 func readMeta(dir string) (metaOnDisk, error) {
