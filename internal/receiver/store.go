@@ -66,9 +66,9 @@ func NewStore(dir string, fsync bool) (*Store, error) {
 	return &Store{dir: dir, fsync: fsync, active: map[string]*Transfer{}}, nil
 }
 
-// Scan lists stored transfers without touching them.
-func (s *Store) Scan() ([]Summary, error) {
-	entries, err := os.ReadDir(filepath.Join(s.dir, stateDirName))
+// Scan lists transfers stored under dir without touching them.
+func Scan(dir string) ([]Summary, error) {
+	entries, err := os.ReadDir(filepath.Join(dir, stateDirName))
 	if err != nil {
 		return nil, err
 	}
@@ -77,14 +77,16 @@ func (s *Store) Scan() ([]Summary, error) {
 		if !e.IsDir() {
 			continue
 		}
-		dir := filepath.Join(s.dir, stateDirName, e.Name())
-		md, err := readMeta(dir)
+		tdir := filepath.Join(dir, stateDirName, e.Name())
+		md, err := readMeta(tdir)
 		if err != nil {
 			continue // not ours or damaged; leave it alone
 		}
 		out = append(out, Summary{
-			Meta: md.Meta, Status: md.Status,
-			ReceivedChunks: receivedChunks(dir, md), UpdatedAt: md.UpdatedAt,
+			Meta:           md.Meta,
+			Status:         md.Status,
+			ReceivedChunks: receivedChunks(tdir, md),
+			UpdatedAt:      md.UpdatedAt,
 		})
 	}
 	return out, nil
@@ -93,7 +95,7 @@ func (s *Store) Scan() ([]Summary, error) {
 // Recover marks transfers a crashed receiver left in "transferring" as
 // interrupted. Only the receiver itself calls this, at startup.
 func (s *Store) Recover() error {
-	list, err := s.Scan()
+	list, err := Scan(s.dir)
 	if err != nil {
 		return err
 	}

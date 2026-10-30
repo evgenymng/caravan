@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"path/filepath"
 	"testing"
 
 	"github.com/evgenymng/caravan/internal/receiver"
@@ -42,4 +43,12 @@ func TestStatus_PrintsStoredTransfer(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"status", "--dir", dir, "nope"})
 	require.Error(t, cmd.Execute())
+}
+
+func TestStatus_MissingDirIsNotCreated(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "typo")
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"status", "--dir", dir})
+	require.Error(t, cmd.Execute())
+	require.NoDirExists(t, dir)
 }

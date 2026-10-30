@@ -106,7 +106,7 @@ func TestStore_FinalizeMismatchResets(t *testing.T) {
 	state := filepath.Join(dir, ".caravan", meta.TransferID)
 	require.NoFileExists(t, filepath.Join(state, "f.bin.part"))
 	require.NoFileExists(t, filepath.Join(dir, "f.bin"))
-	list, err := s.Scan()
+	list, err := Scan(dir)
 	require.NoError(t, err)
 	require.Equal(t, transfer.StatusFailed, list[0].Status)
 
@@ -130,7 +130,7 @@ func TestStore_ResumeAfterRestart(t *testing.T) {
 	tr.Release(transfer.StatusInterrupted)
 
 	s2 := newStore(t, dir) // "restart"
-	list, err := s2.Scan()
+	list, err := Scan(dir)
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 	require.Equal(t, transfer.StatusInterrupted, list[0].Status)
@@ -199,12 +199,12 @@ func TestStore_ScanIsReadOnlyRecoverMarksInterrupted(t *testing.T) {
 	_ = tr // simulate kill -9: never released
 
 	other := newStore(t, dir) // e.g. `caravan status` while receiver runs
-	list, err := other.Scan()
+	list, err := Scan(dir)
 	require.NoError(t, err)
 	require.Equal(t, transfer.StatusTransferring, list[0].Status)
 
 	require.NoError(t, other.Recover()) // receiver restart
-	list, err = other.Scan()
+	list, err = Scan(dir)
 	require.NoError(t, err)
 	require.Equal(t, transfer.StatusInterrupted, list[0].Status)
 	raw, err := os.ReadFile(
@@ -239,7 +239,7 @@ func TestStore_CompletedIsIdempotent(t *testing.T) {
 	require.Equal(t, path, path2)
 	require.NoFileExists(t, filepath.Join(dir, "f (1).bin"))
 
-	list, err := s.Scan()
+	list, err := Scan(dir)
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 	require.Equal(t, transfer.StatusCompleted, list[0].Status)

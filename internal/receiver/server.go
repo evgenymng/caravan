@@ -114,7 +114,7 @@ func (s *Server) Serve(ctx context.Context) error {
 }
 
 func (s *Server) logStored() {
-	list, err := s.store.Scan()
+	list, err := Scan(s.cfg.Dir)
 	if err != nil {
 		return
 	}

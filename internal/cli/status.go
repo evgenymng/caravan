@@ -16,11 +16,7 @@ func newStatusCmd() *cobra.Command {
 		Short: "Show state of stored transfers",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, err := receiver.NewStore(dir, false)
-			if err != nil {
-				return err
-			}
-			list, err := store.Scan()
+			list, err := receiver.Scan(dir)
 			if err != nil {
 				return err
 			}
@@ -42,8 +38,7 @@ func newStatusCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().
-		StringVar(&dir, "dir", "./downloads", "receiver downloads directory")
+	cmd.Flags().StringVar(&dir, "dir", "./downloads", "receiver downloads directory")
 	return cmd
 }
 
