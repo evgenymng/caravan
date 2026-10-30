@@ -270,3 +270,37 @@ func TestSender_RejectsBogusResumeState(t *testing.T) {
 		})
 	}
 }
+
+// A received file altered in place after COMPLETE is sent again instead of failing the send.
+func TestSender_ResendsAlteredReceivedFile(t *testing.T) {
+	dir := t.TempDir()
+	addr := startReceiver(t, dir, receiver.Config{})
+	path, data := tempFile(t, 3*chunkSize)
+	require.NoError(t, New(opts(path, addr), discard).Run(context.Background()))
+
+	received := filepath.Join(dir, "src.bin")
+	changed := slices.Clone(data)
+	changed[0] ^= 0xff
+	require.NoError(t, os.WriteFile(received, changed, 0o600))
+
+	s := New(opts(path, addr), discard)
+	require.NoError(t, s.Run(context.Background()))
+	require.Equal(t, s.Stats().Meta.Chunks, s.Stats().Sent)
+	got, err := os.ReadFile(filepath.Join(dir, "src (1).bin"))
+	require.NoError(t, err)
+	require.Equal(t, data, got)
+}
+
+// A sender that never saw COMPLETE and runs again gets the stored result, nothing is resent.
+func TestSender_RepeatAfterComplete(t *testing.T) {
+	dir := t.TempDir()
+	addr := startReceiver(t, dir, receiver.Config{})
+	path, _ := tempFile(t, 3*chunkSize)
+	require.NoError(t, New(opts(path, addr), discard).Run(context.Background()))
+
+	s := New(opts(path, addr), discard)
+	require.NoError(t, s.Run(context.Background()))
+	require.Equal(t, uint64(0), s.Stats().Sent)
+	require.Equal(t, s.Stats().Meta.Chunks, s.Stats().Skipped)
+	require.NoFileExists(t, filepath.Join(dir, "src (1).bin"))
+}

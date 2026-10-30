@@ -242,7 +242,12 @@ func (t *Transfer) verifyFinal(ctx context.Context) error {
 		return err
 	}
 	defer func() { _ = f.Close() }()
-	return t.verify(ctx, f)
+	err = t.verify(ctx, f)
+	if errors.Is(err, ErrChecksumMismatch) {
+		// not fatal: the sender reconnects and sends the file again
+		return fmt.Errorf("%w: received file changed", ErrIncomplete)
+	}
+	return err
 }
 
 // verify hashes r against the checksum; a mismatch fails the transfer so the next send starts over.

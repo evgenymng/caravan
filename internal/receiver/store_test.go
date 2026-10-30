@@ -347,7 +347,7 @@ func TestStore_CompletedAlteredFileFailsOnFinalize(t *testing.T) {
 	require.Equal(t, transfer.StatusCompleted, again.Status())
 	require.Equal(t, meta.Chunks, again.ReceivedChunks())
 	_, err = again.Finalize(context.Background())
-	require.ErrorIs(t, err, ErrChecksumMismatch)
+	require.ErrorIs(t, err, ErrIncomplete)
 
 	fresh, err := s.Acquire(meta)
 	require.NoError(t, err)
