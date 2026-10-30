@@ -18,7 +18,7 @@ run-send: ## Send FILE to ADDR (make run-send FILE=./a.bin ADDR=host:8080)
 format: ## Format all Go code (goimports + gofumpt + golines)
 	goimports -w .
 	gofumpt -w .
-	golines -w -m 80 .
+	golines -w -m 110 .
 
 lint: ## Run golangci-lint
 	golangci-lint run

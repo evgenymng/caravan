@@ -41,5 +41,5 @@ formatters:
     - golines
   settings:
     golines:
-      max-len: 80
+      max-len: 110
       tab-len: 4
