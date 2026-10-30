@@ -394,3 +394,15 @@ func TestStore_DamagedMetaStartsOver(t *testing.T) {
 	require.Equal(t, transfer.StatusTransferring, tr.Status())
 	require.Equal(t, uint64(0), tr.ReceivedChunks())
 }
+
+func TestStore_ScanInterruptedWithoutBitmap(t *testing.T) {
+	dir := t.TempDir()
+	data, meta := testFile(t, 2*testChunk)
+	state := interrupted(t, newStore(t, dir), meta, data)
+	require.NoError(t, os.Remove(filepath.Join(state, "received.bitmap")))
+
+	list, err := Scan(dir)
+	require.NoError(t, err)
+	require.Equal(t, transfer.StatusInterrupted, list[0].Status)
+	require.Equal(t, uint64(0), list[0].ReceivedChunks)
+}

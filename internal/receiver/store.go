@@ -445,18 +445,18 @@ func uniquePath(path string) string {
 	}
 }
 
-// receivedChunks counts bitmap bits; terminal states keep no bitmap: completed has all, failed none.
+// receivedChunks counts bitmap bits; a completed transfer keeps no bitmap but has every chunk.
 func receivedChunks(dir string, md metaOnDisk) uint64 {
-	if md.Status == transfer.StatusFailed {
-		return 0
+	if md.Status == transfer.StatusCompleted {
+		return md.Chunks
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, bitmapFile))
 	if err != nil {
-		return md.Chunks
+		return 0
 	}
 	b, err := transfer.LoadBitmap(md.Chunks, raw)
 	if err != nil {
-		return md.Chunks
+		return 0
 	}
 	return b.Count()
 }
