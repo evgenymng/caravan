@@ -78,7 +78,8 @@ func FormatBytes(n uint64) string {
 func (r *Reporter) draw(done, chunksDone, chunksTotal uint64, final bool) {
 	elapsed := time.Since(r.start).Seconds()
 	var speed float64
-	if elapsed >= 1 && done > r.base { // too noisy before a full second of samples
+	settled := final || elapsed >= 1 // mid-run speed is too noisy before a full second of samples
+	if settled && elapsed > 0 && done > r.base {
 		speed = float64(done-r.base) / elapsed
 	}
 	var eta time.Duration

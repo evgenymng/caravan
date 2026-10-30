@@ -57,6 +57,14 @@ func TestReporter_SpeedRestartsAfterIdle(t *testing.T) {
 	require.Contains(t, out.String(), "ETA 1m28s", "1 MB/s since the pause, not averaged over it")
 }
 
+func TestReporter_FinishUnderSecondShowsSpeed(t *testing.T) {
+	var out bytes.Buffer
+	r := New(&out, "send", 10<<20, 0, false)
+	r.start = time.Now().Add(-500 * time.Millisecond)
+	r.Finish(10<<20, 10)
+	require.NotContains(t, out.String(), " 0 B/s", "final line averages over the whole run")
+}
+
 func TestFormatBytes(t *testing.T) {
 	require.Equal(t, "512 B", FormatBytes(512))
 	require.Equal(t, "1.0 KB", FormatBytes(1024))
