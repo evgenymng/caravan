@@ -2,6 +2,7 @@ package receiver
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"math/rand"
@@ -62,7 +63,7 @@ func TestStore_FullTransfer(t *testing.T) {
 	require.True(t, dup)
 	require.Equal(t, [][2]uint64{{0, 2}}, tr.Received())
 
-	path, err := tr.Finalize()
+	path, err := tr.Finalize(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(dir, "f.bin"), path)
 	got, err := os.ReadFile(path)
@@ -86,7 +87,7 @@ func TestStore_WriteChunkErrors(t *testing.T) {
 	require.ErrorIs(t, err, ErrOutOfRange)
 	_, err = tr.WriteChunk(1, data[:2])
 	require.ErrorIs(t, err, ErrBadChunk)
-	_, err = tr.Finalize()
+	_, err = tr.Finalize(context.Background())
 	require.ErrorIs(t, err, ErrIncomplete)
 }
 
@@ -100,7 +101,7 @@ func TestStore_FinalizeMismatchResets(t *testing.T) {
 	wrong[0] ^= 0xff
 	_, err = tr.WriteChunk(0, wrong)
 	require.NoError(t, err)
-	_, err = tr.Finalize()
+	_, err = tr.Finalize(context.Background())
 	require.ErrorIs(t, err, ErrChecksumMismatch)
 	state := filepath.Join(dir, ".caravan", meta.TransferID)
 	require.NoFileExists(t, filepath.Join(state, "f.bin.part"))
@@ -145,7 +146,7 @@ func TestStore_ResumeAfterRestart(t *testing.T) {
 	require.Equal(t, [][2]uint64{{0, 0}, {2, 2}}, tr2.Received())
 	_, err = tr2.WriteChunk(1, chunk(data, meta, 1))
 	require.NoError(t, err)
-	path, err := tr2.Finalize()
+	path, err := tr2.Finalize(context.Background())
 	require.NoError(t, err)
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -184,7 +185,7 @@ func TestStore_NameCollision(t *testing.T) {
 	require.NoError(t, err)
 	_, err = tr.WriteChunk(0, data)
 	require.NoError(t, err)
-	path, err := tr.Finalize()
+	path, err := tr.Finalize(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(dir, "f (1).bin"), path)
 }
@@ -222,7 +223,7 @@ func TestStore_CompletedIsIdempotent(t *testing.T) {
 		_, err = tr.WriteChunk(i, chunk(data, meta, i))
 		require.NoError(t, err)
 	}
-	path, err := tr.Finalize()
+	path, err := tr.Finalize(context.Background())
 	require.NoError(t, err)
 
 	// COMPLETE was lost: sender comes back with the same META.
@@ -233,7 +234,7 @@ func TestStore_CompletedIsIdempotent(t *testing.T) {
 	dup, err := again.WriteChunk(0, chunk(data, meta, 0))
 	require.NoError(t, err)
 	require.True(t, dup)
-	path2, err := again.Finalize()
+	path2, err := again.Finalize(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, path, path2)
 	require.NoFileExists(t, filepath.Join(dir, "f (1).bin"))
@@ -274,7 +275,7 @@ func TestStore_CrashBeforeRenameResumes(t *testing.T) {
 	tr, err = newStore(t, dir).Acquire(meta)
 	require.NoError(t, err)
 	require.Equal(t, meta.Chunks, tr.ReceivedChunks())
-	path, err := tr.Finalize()
+	path, err := tr.Finalize(context.Background())
 	require.NoError(t, err)
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -289,7 +290,7 @@ func TestStore_CompletedFileChangedStartsOver(t *testing.T) {
 	require.NoError(t, err)
 	_, err = tr.WriteChunk(0, data)
 	require.NoError(t, err)
-	path, err := tr.Finalize()
+	path, err := tr.Finalize(context.Background())
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(path, []byte("changed"), 0o600))
 
@@ -298,4 +299,22 @@ func TestStore_CompletedFileChangedStartsOver(t *testing.T) {
 	defer tr.Release(transfer.StatusInterrupted)
 	require.Equal(t, transfer.StatusTransferring, tr.Status())
 	require.Equal(t, uint64(0), tr.ReceivedChunks())
+}
+
+func TestStore_FinalizeCancelledKeepsPart(t *testing.T) {
+	dir := t.TempDir()
+	s := newStore(t, dir)
+	data, meta := testFile(t, testChunk)
+	tr, err := s.Acquire(meta)
+	require.NoError(t, err)
+	_, err = tr.WriteChunk(0, data)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = tr.Finalize(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, transfer.StatusTransferring, tr.Status())
+	require.FileExists(t,
+		filepath.Join(dir, ".caravan", meta.TransferID, "f.bin.part"))
 }

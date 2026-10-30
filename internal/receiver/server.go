@@ -52,6 +52,7 @@ type Server struct {
 // session is the per-connection protocol state machine.
 type session struct {
 	*Server
+	ctx  context.Context
 	conn net.Conn
 	log  *slog.Logger
 }
@@ -141,7 +142,7 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 	defer stop()
 
 	log := s.log.With("remote", conn.RemoteAddr().String())
-	c := &session{Server: s, conn: conn, log: log}
+	c := &session{Server: s, ctx: ctx, conn: conn, log: log}
 	if err := c.run(); err != nil {
 		log.Warn("session ended", "error", err)
 	}
@@ -211,29 +212,29 @@ func (c *session) loop(tr *Transfer) error {
 				return err
 			}
 		case protocol.TypeFinalize:
-			done, err := c.handleFinalize(tr)
-			if err != nil || done {
-				return err
-			}
+			return c.handleFinalize(tr)
 		default:
 			return fmt.Errorf("%w: %d", protocol.ErrUnexpectedType, typ)
 		}
 	}
 }
 
-// handleFinalize verifies and completes the transfer. An incomplete
-// bitmap is reported and the session continues (done == false).
-func (c *session) handleFinalize(tr *Transfer) (bool, error) {
-	path, err := tr.Finalize()
-	if errors.Is(err, ErrIncomplete) {
-		return false, c.fail(protocol.CodeIncomplete, err.Error(), nil)
-	}
+// handleFinalize verifies and completes the transfer; the session ends
+// either way. The whole-file hash is abandoned if the sender goes away.
+func (c *session) handleFinalize(tr *Transfer) error {
+	ctx, cancel := context.WithCancel(c.ctx)
+	defer cancel()
+	_ = c.conn.SetReadDeadline(time.Time{})
+	// The sender is silent until COMPLETE: any read result means it left.
+	go func() { _, _ = c.conn.Read(make([]byte, 1)); cancel() }()
+
+	path, err := tr.Finalize(ctx)
 	if err != nil {
-		return true, c.fail(codeFor(err), err.Error(), nil)
+		return c.fail(codeFor(err), err.Error(), nil)
 	}
 	c.log.Info("transfer completed", "path", path,
 		"checksum", tr.Meta().Checksum)
-	return true, c.write(protocol.TypeComplete, protocol.Complete{
+	return c.write(protocol.TypeComplete, protocol.Complete{
 		TransferID: tr.Meta().TransferID, Checksum: tr.Meta().Checksum,
 	})
 }
@@ -298,6 +299,8 @@ func codeFor(err error) string {
 		return protocol.CodeInvalidMeta
 	case errors.Is(err, ErrOutOfRange):
 		return protocol.CodeOutOfRange
+	case errors.Is(err, ErrIncomplete):
+		return protocol.CodeIncomplete
 	case errors.Is(err, ErrChecksumMismatch):
 		return protocol.CodeChecksumMismatch
 	default:

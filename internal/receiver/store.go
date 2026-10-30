@@ -226,7 +226,7 @@ func (t *Transfer) WriteChunk(index uint64, data []byte) (bool, error) {
 // Finalize verifies the whole file, moves it into the downloads
 // directory and removes the transfer state. On checksum mismatch the
 // transfer is dropped so the next attempt starts from scratch.
-func (t *Transfer) Finalize() (string, error) {
+func (t *Transfer) Finalize(ctx context.Context) (string, error) {
 	if t.status == transfer.StatusCompleted {
 		t.unregister()
 		return t.finalPath, nil
@@ -241,7 +241,7 @@ func (t *Transfer) Finalize() (string, error) {
 	if _, err := t.part.Seek(0, 0); err != nil {
 		return "", err
 	}
-	sum, err := transfer.HashReader(context.Background(), t.part)
+	sum, err := transfer.HashReader(ctx, t.part)
 	if err != nil {
 		return "", fmt.Errorf("hash part file: %w", err)
 	}
