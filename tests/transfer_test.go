@@ -23,7 +23,9 @@ func TestPlainTransfer(t *testing.T) {
 
 	require.Equal(t, sum, fileSum(t, filepath.Join(dir, "archive.zip")))
 	require.Equal(t, uint64(12), s.Stats().Acked)
-	require.NoFileExists(t, filepath.Join(dir, ".caravan", s.Stats().Meta.TransferID))
+	state := filepath.Join(dir, ".caravan", s.Stats().Meta.TransferID)
+	require.NoFileExists(t, filepath.Join(state, "archive.zip.part"))
+	require.NoFileExists(t, filepath.Join(state, "received.bitmap"))
 }
 
 func TestEmptyFile(t *testing.T) {
