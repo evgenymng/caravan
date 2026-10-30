@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"log/slog"
 	"os"
 	"sync"
@@ -24,11 +23,10 @@ func newReceiveCmd() *cobra.Command {
 		Use:   "receive",
 		Short: "Accept incoming file transfers",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			size, err := parseSize(maxChunkSize)
-			if err != nil || size > 1<<30 {
-				return fmt.Errorf("invalid --max-chunk-size %q", maxChunkSize)
+			var err error
+			if cfg.MaxChunkSize, err = parseChunkSize("max-chunk-size", maxChunkSize); err != nil {
+				return err
 			}
-			cfg.MaxChunkSize = uint32(size) //nolint:gosec // ≤ 1 GiB
 			cfg.Fsync = !noFsync
 
 			var mu sync.Mutex

@@ -2,7 +2,9 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -32,4 +34,15 @@ func TestSend_RejectsTinyChunkSize(t *testing.T) {
 		"--chunk-size", "0",
 	})
 	require.ErrorContains(t, cmd.Execute(), "--chunk-size")
+}
+
+func TestReceive_RejectsTinyMaxChunkSize(t *testing.T) {
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{
+		"receive", "--addr", "127.0.0.1:0", "--dir", t.TempDir(),
+		"--max-chunk-size", "1KB",
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	require.ErrorContains(t, cmd.ExecuteContext(ctx), "--max-chunk-size")
 }

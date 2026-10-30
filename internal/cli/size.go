@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/evgenymng/caravan/internal/transfer"
 )
 
 var sizeUnits = map[string]uint64{
@@ -29,4 +31,13 @@ func parseSize(s string) (uint64, error) {
 		return 0, fmt.Errorf("invalid size unit %q", s[i:])
 	}
 	return n * mult, nil
+}
+
+// parseChunkSize parses the value of a chunk size flag and checks it is within 4KB..1GB.
+func parseChunkSize(flag, s string) (uint32, error) {
+	n, err := parseSize(s)
+	if err != nil || n < transfer.MinChunkSize || n > 1<<30 {
+		return 0, fmt.Errorf("invalid --%s %q, want 4KB..1GB", flag, s)
+	}
+	return uint32(n), nil //nolint:gosec // ≤ 1 GiB
 }

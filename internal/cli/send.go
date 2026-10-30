@@ -10,7 +10,6 @@ import (
 
 	"github.com/evgenymng/caravan/internal/progress"
 	"github.com/evgenymng/caravan/internal/sender"
-	"github.com/evgenymng/caravan/internal/transfer"
 )
 
 func newSendCmd() *cobra.Command {
@@ -22,11 +21,10 @@ func newSendCmd() *cobra.Command {
 		Use:   "send",
 		Short: "Send a file to a receiver",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			size, err := parseSize(chunkSize)
-			if err != nil || size < transfer.MinChunkSize || size > 1<<30 {
-				return fmt.Errorf("invalid --chunk-size %q, want 4KB..1GB", chunkSize)
+			var err error
+			if opts.ChunkSize, err = parseChunkSize("chunk-size", chunkSize); err != nil {
+				return err
 			}
-			opts.ChunkSize = uint32(size) //nolint:gosec // ≤ 1 GiB
 
 			var bar *progress.Reporter
 			barFor := func(st sender.Stats) *progress.Reporter {
